@@ -3,31 +3,12 @@ import { drive_v3, google, Auth } from 'googleapis';
 
 /**
  * Given an authenticated client, returns a Google Drive client.
+ * 
+ * @param auth An authenticated JWT client.
+ * @returns A Google Drive client.
  */
-export async function getDriveClient(auth: Auth.JWT): Promise<drive_v3.Drive> {
+export function getDriveClient(auth: Auth.JWT): drive_v3.Drive {
   return google.drive({ version: 'v3', auth });
-}
-
-/**
- * Lists the names and IDs of up to 10 files.
- */
-export async function listFiles(drive: drive_v3.Drive): Promise<void> {
-  // Get the list of files.
-  const result = await drive.files.list({
-    pageSize: 10,
-    fields: 'nextPageToken, files(id, name)',
-  });
-  const files = result.data.files;
-  if (!files || files.length === 0) {
-    console.log('No files found.');
-    return;
-  }
-
-  console.log('Files:');
-  // Print the name and ID of each file.
-  files.forEach((file) => {
-    console.log(`${file.name} (${file.id})`);
-  });
 }
 
 /**

@@ -5,3 +5,4 @@ dist/
 .vscode/
 .DS_Store
 credentials.json
+service-account-key.json

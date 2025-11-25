@@ -47,41 +47,48 @@ export async function getSheetData(sheets: sheets_v4.Sheets, spreadsheetId: stri
 
 /**
  * Given a spreadsheet ID, returns all data in that sheet as a 3D array with
- * the sheet name as the first dimension, and rows and columns as the second 
- * and third dimensions.
+ * the sheet name as the first dimension, rows as the second dimension, and 
+ * cells as the third dimension. Each cell includes both its value and formatting.
+ * 
  * @param sheets An authenticated Google Sheets client.
  * @param spreadsheetId The ID of the spreadsheet.
- * @returns A promise that resolves to a 3D array of cell values.
+ * @returns A promise that resolves to a 2D array of all rows for each sheet.
  */
-export async function getAllSheetData(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<{ [sheetName: string]: (string | number | boolean)[][] }> {
-  const sheetsInSpreadsheet = await getSheetsInSpreadsheet(sheets, spreadsheetId);
+export async function getAllSheetData(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<{ [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][] }> {
   // All data object to hold data from all sheets
-  // The keys are sheet names, and the values are 2D arrays of cell values
-  // The first row is the header row, and the subsequent rows are the data rows
-  // Example: { 'Sheet1': [ ['Header1', 'Header2'], ['Data1', 'Data2'], ... ], ... }
-  const allData: { [sheetName: string]: (string | number | boolean)[][] } = {};
+  // The keys are sheet names, and the values are objects with cell value and
+  // formatting information.
+  const allData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]} = {};
 
-  // Get the names only of the sheets to be used as ranges
-  const sheetNames = sheetsInSpreadsheet.map(sheet => sheet.properties?.title).filter((name): name is string => !!name);
-
-  // Remove the 'Overview' sheet if it exists
-  const overviewIndex = sheetNames.indexOf('Overview');
-  if (overviewIndex !== -1) {
-    sheetNames.splice(overviewIndex, 1);
-  }
-
-  // Fetch data with batchGet
-  const result = await sheets.spreadsheets.values.batchGet({
+  // First, get all sheets in the spreadsheet
+  const result = await sheets.spreadsheets.get({
     spreadsheetId: spreadsheetId,
-    ranges: sheetNames,
+    fields: 'sheets'
   });
 
-  // Split the data into the allData object
-  if (result.data.valueRanges) {
-    result.data.valueRanges.forEach((valueRange, index) => {
-      const sheetName = sheetNames[index];
-      allData[sheetName] = valueRange.values ?? [];
-    });
+  if (!result.data.sheets) {
+    return {};
+  }
+  const sheetsInSpreadsheet = result.data.sheets;
+
+  // Remove Overview sheet if it exists
+  const overviewIndex = sheetsInSpreadsheet.findIndex(sheet => sheet.properties?.title === 'Overview');
+  if (overviewIndex !== -1) {
+    sheetsInSpreadsheet.splice(overviewIndex, 1);
+  }
+
+  // For each sheet, get the effectiveValue and the effectiveFormat of each cell
+  // in each row, and store it in the allData object.
+  for (const sheet of sheetsInSpreadsheet) {
+    const sheetData = sheet.data![0].rowData?.map((row) => {
+        return row.values?.map((cell) => {
+          return {
+            cellValue: cell.effectiveValue ? (cell.effectiveValue.stringValue ?? cell.effectiveValue.numberValue ?? cell.effectiveValue.boolValue ?? '') : '',
+            cellFormat: cell.effectiveFormat ?? {},
+          }
+        }) ?? [];
+      }) ?? [];
+    allData[sheet.properties?.title ?? ''] = sheetData;
   }
 
   return allData;

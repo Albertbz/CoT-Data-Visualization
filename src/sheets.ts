@@ -1,3 +1,4 @@
+import { GaxiosResponse } from 'gaxios';
 import { google, Auth, sheets_v4 } from 'googleapis';
 
 /**
@@ -60,11 +61,24 @@ export async function getAllSheetData(sheets: sheets_v4.Sheets, spreadsheetId: s
   // formatting information.
   const allData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]} = {};
 
-  // First, get all sheets in the spreadsheet
-  const result = await sheets.spreadsheets.get({
-    spreadsheetId: spreadsheetId,
-    fields: 'sheets'
-  });
+  // First, get all sheets in the spreadsheet. There is a limit to how many times
+  // this can be called in X minutes, so handle the exception if it occurs, log
+  // it, and try again after a delay.
+  let result: GaxiosResponse<sheets_v4.Schema$Spreadsheet> | null = null;
+  try {
+    result = await sheets.spreadsheets.get({
+      spreadsheetId: spreadsheetId,
+      fields: 'sheets'
+    });
+  } catch (error) {
+    console.error('Error fetching sheets:', error);
+    // Implement a delay before retrying, e.g., using setTimeout or a sleep function
+    await new Promise(resolve => setTimeout(resolve, 60000)); // Wait for 60 seconds
+    result = await sheets.spreadsheets.get({
+      spreadsheetId: spreadsheetId,
+      fields: 'sheets'
+    });
+  }
 
   if (!result.data.sheets) {
     return {};

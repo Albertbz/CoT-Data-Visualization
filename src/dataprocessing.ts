@@ -42,7 +42,17 @@ export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue:
       return rowObject;
     });
 
-    parsedData.push(...parsedRows);
+    // Filter out empty rows (where Character Name is empty)
+    const nonEmptyParsedRows = parsedRows.filter(row => row['Character Name'] !== '');
+
+    // Also delete any duplicate entries based on Character Name
+    const uniqueParsedRows: { [characterName: string]: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string } } = {};
+    for (const row of nonEmptyParsedRows) {
+      uniqueParsedRows[row['Character Name']] = row;
+    }
+
+    const deduplicatedParsedRows = Object.values(uniqueParsedRows);
+    parsedData.push(...deduplicatedParsedRows);
   }
 
   return parsedData;

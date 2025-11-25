@@ -26,7 +26,7 @@ export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue:
     const parsedRows = rows.map((row) => {
       const rowObject: { [key: string]: string | number | boolean } = {};
       headers.forEach((header, index) => {
-        rowObject[String(header)] = row[index].cellValue;
+        rowObject[String(header)] = row[index] ? row[index].cellValue : '';
       });
       return rowObject;
     });

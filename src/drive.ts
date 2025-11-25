@@ -29,3 +29,35 @@ export async function getFilesInFolder(drive: drive_v3.Drive, folderId: string, 
 
   return files;
 }
+
+/**
+ * Given a file ID, returns all revisions of that file.
+ * 
+ * @param drive An authenticated Google Drive client.
+ * @param fileId The ID of the file in Google Drive.
+ * @returns A promise that resolves to an array of Revision objects.
+ */
+export async function getFileRevisions(drive: drive_v3.Drive, fileId: string): Promise<drive_v3.Schema$Revision[]> {
+  const revisions = [];
+  
+  // Start by getting the first page of revisions
+  const result = await drive.revisions.list({
+    fileId: fileId,
+    fields: 'revisions(id, modifiedTime, lastModifyingUser(displayName, emailAddress))',
+  });
+  // Add the revisions from the first page
+  revisions.push(...(result.data.revisions ?? []));
+  
+  // If there are more pages, keep fetching them
+  while (result.data.nextPageToken) {
+    const nextPage = await drive.revisions.list({
+      fileId: fileId,
+      pageToken: result.data.nextPageToken,
+      fields: 'revisions(id, modifiedTime, lastModifyingUser(displayName, emailAddress))',
+    });
+    revisions.push(...(nextPage.data.revisions ?? []));
+    result.data.nextPageToken = nextPage.data.nextPageToken;
+  }
+
+  return revisions;
+}

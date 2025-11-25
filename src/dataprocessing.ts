@@ -7,16 +7,14 @@ import { sheets_v4 } from 'googleapis';
  * 
  * @param allSheetData A 3D array where the first dimension is the sheet name,
  * the second dimension are the rows, and the third dimension are the cells.
- * @returns An object where each key is a sheet name and the value is an array
- * of objects representing the rows in that sheet.
+ * @returns An array of objects of all characters.
  */
-export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { [sheetName: string]: { [key: string]: string | number | boolean }[] } {
-  const parsedData: { [sheetName: string]: { [key: string]: string | number | boolean }[] } = {};
+export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] {
+  const parsedData: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] = [];
 
   for (const sheetName in allSheetData) {
     const sheetData = allSheetData[sheetName];
     if (sheetData.length === 0) {
-      parsedData[sheetName] = [];
       continue;
     }
 
@@ -24,14 +22,27 @@ export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue:
     const rows = sheetData.slice(1);
 
     const parsedRows = rows.map((row) => {
-      const rowObject: { [key: string]: string | number | boolean } = {};
+      const rowObject: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string } = {
+        "Social Class": '',
+        "House": '',
+        "Role": '',
+        "Character Name": '',
+        "VS Username": '',
+        "Discord Username": '',
+        "Timezone": '',
+        "Comments": ''
+      };
       headers.forEach((header, index) => {
-        rowObject[String(header)] = row[index] ? row[index].cellValue : '';
+        const key = String(header) as keyof typeof rowObject;
+        if (key in rowObject) {
+          rowObject[key] = row[index] ? String(row[index].cellValue) : '';
+        }
       });
+      rowObject['House'] = sheetName;
       return rowObject;
     });
 
-    parsedData[sheetName] = parsedRows;
+    parsedData.push(...parsedRows);
   }
 
   return parsedData;

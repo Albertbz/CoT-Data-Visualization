@@ -31,6 +31,24 @@ export async function getFilesInFolder(drive: drive_v3.Drive, folderId: string, 
 }
 
 /**
+ * Given a file ID, assuming said file is a folder containing folders of months,
+ * returns all day files in said month folders.
+ * 
+ * @param drive An authenticated Google Drive client.
+ * @param folderId The ID of the folder in Google Drive.
+ * @returns A promise that resolves to an array of File objects.
+ */
+export async function getAllDayFilesInMonthFolders(drive: drive_v3.Drive, folderId: string): Promise<drive_v3.Schema$File[]> {
+  const monthFolders = await getFilesInFolder(drive, folderId, 10);
+  const dayFiles: drive_v3.Schema$File[] = [];
+  for (const file of monthFolders) {
+    const files = await getFilesInFolder(drive, file.id!, 31);
+    dayFiles.push(...files);
+  }
+  return dayFiles;
+}
+
+/**
  * Given a file ID, returns all revisions of that file.
  * 
  * @param drive An authenticated Google Drive client.

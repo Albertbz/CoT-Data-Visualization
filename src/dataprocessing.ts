@@ -9,7 +9,7 @@ import { sheets_v4 } from 'googleapis';
  * the second dimension are the rows, and the third dimension are the cells.
  * @returns An array of objects of all characters.
  */
-export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] {
+export function parseHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] {
   const parsedData: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] = [];
 
   for (const sheetName in allSheetData) {
@@ -67,7 +67,7 @@ export function parseSheetData(allSheetData: { [sheetName: string]: { cellValue:
  * the second dimension is the row, and the third dimension are the cells.
  * @returns A cleaned version of the input data.
  */
-export function cleanSheetData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]} {
+export function cleanHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]} {
   // First, ignore any sheet named 'Overview'
   delete allSheetData['Overview'];
 
@@ -202,4 +202,144 @@ export function cleanSheetData(allSheetData: { [sheetName: string]: { cellValue:
   }
 
   return allSheetData;
+}
+
+/**
+ * Given a 2D array of character age data from a sheet, cleans the data by
+ * looking at the headers and ensuring that they are as expected. If not, attempts
+ * to fix the data by remapping or transforming it.
+ * 
+ * @param sheetData A 2D array where the first dimension is the row and the
+ * second dimension is the column.
+ * @returns A cleaned version of the input data.
+ */
+export function cleanAgeData(sheetData: (string | number | boolean)[][]): (string | number | boolean)[][] {
+  // First, remove the first column as it is always empty
+  for (let i = 0; i < sheetData.length; i++) {
+    sheetData[i] = sheetData[i].slice(1);
+  }
+
+  // Also, remove the first 5 rows, as they are metadata
+  sheetData = sheetData.slice(5);
+
+  // Expected headers:
+  // ['Discord Username', 'VS Username', 'Character Name', 'Affiliation', 'PvE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8']
+  const expectedHeaders = ['Discord Username', 'VS Username', 'Character Name', 'Affiliation', 'PvE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8'];
+  if (sheetData.length === 0) {
+    return sheetData;
+  }
+
+  // Headers are in the 6th row (index 0 after slicing)
+  const headers = sheetData[0];
+  const headerMismatch = expectedHeaders.some((expectedHeader, index) => String(headers[index]) !== expectedHeader);
+
+  if (headerMismatch) {
+    // If they contain one of the following headers instead, we can remap them:
+    // ['Discord Username', 'VS Username', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8']
+    // or
+    // ['Player Name', 'Ingame Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8']
+    // or
+    // ['Player Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Birth', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7']
+    // or
+    // ['Player Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7']
+    const alternativeHeadersList = [
+      ['Discord Username', 'VS Username', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8'],
+      ['Player Name', 'Ingame Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8'],
+      ['Player Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Birth', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7'],
+      ['Player Name', 'Character Name', 'Affiliation', 'PVE Deaths', 'Year of Maturity', 'Current Age', 'Year 4', 'Year 5', 'Year 6', 'Year 7']
+    ];
+
+    let isAlternativeFormat = false;
+    let matchIndex = -1;
+    for (const alternativeHeaders of alternativeHeadersList) {
+      const match = alternativeHeaders.every((altHeader, index) => String(headers[index]) === altHeader);
+      if (match) {
+        isAlternativeFormat = true;
+        matchIndex = alternativeHeadersList.indexOf(alternativeHeaders);
+        break;
+      }
+    }
+  
+
+    if (isAlternativeFormat) {
+      console.log(`Remapping alternative headers in Age sheet to expected headers.`);
+      // Remap the headers (we do not care about formatting in this case)
+      if (matchIndex === 2 || matchIndex === 3) {
+        // Special case: need to add missing headers
+        // Must shift columns to the right and add empty columns for missing data
+        const newSheetData: (string | number | boolean)[][] = [];
+        newSheetData.push(expectedHeaders);
+        for (let i = 1; i < sheetData.length; i++) {
+          const row = sheetData[i];
+          const newRow: (string | number | boolean)[] = [];
+          newRow.push(row[0]); // Discord Username (Player Name)
+          newRow.push(''); // VS Username (missing)
+          newRow.push(row[1]); // Character Name
+          newRow.push(row[2]); // Affiliation
+          newRow.push(row[3]); // PvE Deaths
+          newRow.push(row[4]); // Year of Maturity (Year of Birth)
+          newRow.push(row[5]); // Current Age
+          newRow.push(row[6]); // Year 4
+          newRow.push(row[7]); // Year 5
+          newRow.push(row[8]); // Year 6
+          newRow.push(row[9]); // Year 7
+          newSheetData.push(newRow);
+        }
+        sheetData = newSheetData;
+      } 
+      else {
+        // Simply renaming of headers, so just replace them
+        sheetData[0] = expectedHeaders.map(header => header);
+      }
+    } else {
+      console.warn('Unrecognized header format:', headers);
+    }
+  }
+  else {
+    console.log('Headers match expected format.');
+  }
+
+  return sheetData;
+}
+
+/**
+ * Given cleaned data from Age sheets, parses it into an array of objects for easier processing.
+ * 
+ * @param sheetData A 2D array where the first dimension is the row and the second dimension is the column.
+ * @returns An array of objects of all characters.
+ */
+export function parseAgeData(sheetData: (string | number | boolean)[][]): { "Discord Username": string; "VS Username": string; "Character Name": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] {
+  const parsedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] = [];
+
+  if (sheetData.length === 0) {
+    return parsedData;
+  }
+
+  const rows = sheetData.slice(1);
+
+  for (const row of rows) {
+    // Skip empty rows
+    if (row.every(cell => cell === '')) {
+      continue;
+    }
+
+    const rowObject: { "Discord Username": string; "VS Username": string; "Character Name": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number } = {
+      "Discord Username": String(row[0]),
+      "VS Username": String(row[1]),
+      "Character Name": String(row[2]),
+      "Affiliation": String(row[3]),
+      "PvE Deaths": Number(row[4]),
+      "Year of Maturity": Number(row[5]),
+      "Current Age": Number(row[6]),
+      "Year 4": Number(row[7]),
+      "Year 5": Number(row[8]),
+      "Year 6": Number(row[9]),
+      "Year 7": Number(row[10]),
+      "Year 8": Number(row[11])
+    };
+
+    parsedData.push(rowObject);
+  }
+
+  return parsedData;
 }

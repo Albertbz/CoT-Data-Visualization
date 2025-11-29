@@ -37,11 +37,23 @@ export async function getSheetsInSpreadsheet(sheets: sheets_v4.Sheets, spreadshe
  * @returns A promise that resolves to a 2D array of cell values.
  */
 export async function getSheetData(sheets: sheets_v4.Sheets, spreadsheetId: string, sheetName: string): Promise<(string | number | boolean)[][]> {
-  const result = await sheets.spreadsheets.values.get({
-    spreadsheetId: spreadsheetId,
-    range: sheetName,
-  });
-
+  // Get the values in the specified sheet. Take into account the quota limits
+  // for reading data from Google Sheets API. Retry after a delay if quota exceeded.
+  let result;
+  try {
+    result = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: sheetName,
+    });
+  } catch (error) {
+    console.error('Error fetching sheet data:', error);
+    // Implement a delay before retrying, e.g., using setTimeout or a sleep function
+    await new Promise(resolve => setTimeout(resolve, 60000)); // Wait for 60 seconds
+    result = await sheets.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId,
+      range: sheetName,
+    });
+  }
   const values = result.data.values ?? [];
   return values;
 }

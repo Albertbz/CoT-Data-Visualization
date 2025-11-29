@@ -7,3 +7,4 @@ dist/
 credentials.json
 service-account-key.json
 parsed_data
+merged_data

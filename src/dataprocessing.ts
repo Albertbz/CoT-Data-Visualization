@@ -1,4 +1,7 @@
-import { sheets_v4 } from 'googleapis';
+import { Auth, sheets_v4 } from 'googleapis';
+import { getAllDayFilesInMonthFolders, getDriveClient } from './drive';
+import { getAllSheetData, getSheetData, getSheetsClient } from './sheets';
+import { saveParsedDataToFile } from './filemanagement';
 
 /**
  * Given a 3D array of cells from multiple sheets, parses the data into
@@ -342,4 +345,124 @@ export function parseAgeData(sheetData: (string | number | boolean)[][]): { "Dis
   }
 
   return parsedData;
+}
+
+/**
+ * Given the ID of a Google Drive folder containing Age sheets, process and save
+ * all sheets in all files in the folder, parsing them into JSON files.
+ * 
+ * @param jwt An authenticated JWT client.
+ * @param folderId The ID of the Google Drive folder.
+ */
+export async function processAgeSheets(jwt: Auth.JWT, folderId: string): Promise<void> {
+  const drive = getDriveClient(jwt);
+  
+  const dayFiles = await getAllDayFilesInMonthFolders(drive, folderId);
+
+  const sheets = getSheetsClient(jwt);
+  for (const dayFile of dayFiles) {
+    console.log('Processing file:', dayFile.name, `(${dayFile.id})`);
+    const data = await getSheetData(sheets, dayFile.id!, 'Age');
+    const cleanedData = cleanAgeData(data);
+    const parsedData = parseAgeData(cleanedData);
+    console.log(`Parsed data from file: ${dayFile.name}`);
+    // Uncomment the following line to see the parsed data
+    // console.log(JSON.stringify(parsedData, null, 2));
+    const filename = `${dayFile.name?.split('- ')[1].split(',')[0]}.json`;
+    const savePath = `parsed_data/age/${filename}`;
+    saveParsedDataToFile(parsedData, savePath);
+  }
+}
+ 
+
+/**
+ * Given the ID of a Google Drive folder containing Great Houses Citizens
+ * sheets, process and save all sheets in all files in the folder, parsing them
+ * into JSON files.
+ * 
+ * @param jwt An authenticated JWT client.
+ * @param folderId The ID of the Google Drive folder.
+ */
+export async function processGreatHousesCitizensSheets(jwt: Auth.JWT, folderId: string): Promise<void> {
+  const drive = getDriveClient(jwt);
+  
+  const dayFiles = await getAllDayFilesInMonthFolders(drive, folderId);
+
+  const sheets = getSheetsClient(jwt);
+  for (const dayFile of dayFiles) {
+    console.log('Processing file:', dayFile.name, `(${dayFile.id})`);
+    const data = await getAllSheetData(sheets, dayFile.id!);
+    const cleanedData = cleanHouseData(data);
+    const parsedData = parseHouseData(cleanedData);
+    console.log(`Parsed data from file: ${dayFile.name}`);
+    // Uncomment the following line to see the parsed data
+    // console.log(JSON.stringify(parsedData, null, 2));
+    const filename = `${dayFile.name?.split('- ')[1].split(',')[0]}.json`;
+    const savePath = `parsed_data/house/${filename}`;
+    saveParsedDataToFile(parsedData, savePath);
+  }
+}
+
+
+/**
+ * Given parsed age and house data, merges them based on character names.
+ * 
+ * @param ageData The parsed age data.
+ * @param houseData The parsed house data.
+ * @returns An array of merged character data.
+ */
+export function mergeAgeAndHouseData(
+  ageData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[],
+  houseData: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[]
+): { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] {
+  const mergedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] = [];
+
+  const houseDataMap: { [characterName: string]: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string } } = {};
+  for (const houseEntry of houseData) {
+    houseDataMap[houseEntry['Character Name']] = houseEntry;
+  }
+
+  for (const ageEntry of ageData) {
+    const characterName = ageEntry['Character Name'];
+    const houseEntry = houseDataMap[characterName];
+
+    if (houseEntry) {
+      const mergedEntry = {
+        "Discord Username": ageEntry['Discord Username'],
+        "VS Username": ageEntry['VS Username'],
+        "Character Name": characterName,
+        "Social Class": houseEntry['Social Class'],
+        "Affiliation": ageEntry['Affiliation'],
+        "PvE Deaths": ageEntry['PvE Deaths'],
+        "Year of Maturity": ageEntry['Year of Maturity'],
+        "Current Age": ageEntry['Current Age'],
+        "Year 4": ageEntry['Year 4'],
+        "Year 5": ageEntry['Year 5'],
+        "Year 6": ageEntry['Year 6'],
+        "Year 7": ageEntry['Year 7'],
+        "Year 8": ageEntry['Year 8']
+      };
+      mergedData.push(mergedEntry);
+    }
+    else {
+      const mergedEntry = {
+        "Discord Username": ageEntry['Discord Username'],
+        "VS Username": ageEntry['VS Username'],
+        "Character Name": characterName,
+        "Social Class": 'Commoner',
+        "Affiliation": ageEntry['Affiliation'],
+        "PvE Deaths": ageEntry['PvE Deaths'],
+        "Year of Maturity": ageEntry['Year of Maturity'],
+        "Current Age": ageEntry['Current Age'],
+        "Year 4": ageEntry['Year 4'],
+        "Year 5": ageEntry['Year 5'],
+        "Year 6": ageEntry['Year 6'],
+        "Year 7": ageEntry['Year 7'],
+        "Year 8": ageEntry['Year 8']
+      };
+      mergedData.push(mergedEntry);
+    }
+  }
+  
+  return mergedData;
 }

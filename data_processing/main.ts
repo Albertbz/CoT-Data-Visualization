@@ -1,12 +1,24 @@
-import { mergeAgeAndHouseData } from './dataprocessing';
-// import { getAuthenticatedClient } from './auth';
-// import { Auth } from 'googleapis';
+import { mergeAgeAndHouseData, processAgeSheets, processGreatHousesCitizensSheets } from './dataprocessing';
+import { getAuthenticatedClient } from './auth';
+import { Auth } from 'googleapis';
 import { getPairedFilesByDate, loadDataFromFile, readFilesInDirectory, saveParsedDataToFile } from './filemanagement';
 
 async function main(): Promise<void> {
 
-  // const jwt: Auth.JWT = await getAuthenticatedClient('service-account-key.json', ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets.readonly']);
+  const jwt: Auth.JWT = await getAuthenticatedClient('service-account-key.json', ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets.readonly']);
+  await processAgeSheets(jwt, '1NW8NfeSp1EjIPv42T8s21a3BBSVYufx1');
+  await processGreatHousesCitizensSheets(jwt, '1ym37u6_V0fipdCjhxMRgiD7GH2C-9gML');
+  await mergeAllDataFiles();
+  await combineAllMergedDataFiles();
+}
 
+main();
+
+/**
+ * Combine all merged data files into a single file.
+ * @returns A promise that resolves when the process is complete.
+ */
+export async function combineAllMergedDataFiles(): Promise<void> {
   // Get all files in the /merged_data/ folder.
   const mergedDataFiles = readFilesInDirectory('./merged_data/', '.json');
 
@@ -44,9 +56,6 @@ async function main(): Promise<void> {
   saveParsedDataToFile(allMergedData, combinedFilePath);
   console.log(`Saved combined merged data to ${combinedFilePath}`);
 }
-
-main();
-
 
 /**
  * Read all age and house files, merge their data, and save the merged data

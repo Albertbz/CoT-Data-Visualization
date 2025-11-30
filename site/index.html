@@ -9,7 +9,17 @@
 </head>
 
 <body>
+  <!-- Visualization will be rendered here -->
   <div id="app">
+    <h1>CoT Interactive Visualization</h1>
+    <div style="margin-bottom:8px;color:#fff;">
+      <label for="chart-type" style="margin-right:6px;">Chart type:</label>
+      <select id="chart-type">
+        <option value="stacked">Stacked area</option>
+        <option value="lines">Simple lines</option>
+      </select>
+    </div>
+    <div id="visualization"></div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

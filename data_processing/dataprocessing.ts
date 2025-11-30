@@ -341,6 +341,11 @@ export function parseAgeData(sheetData: (string | number | boolean)[][]): { "Dis
       "Year 8": Number(row[11])
     };
 
+    // Skip rows where Character Name is empty
+    if (rowObject['Character Name'] === '') {
+      continue;
+    }
+
     parsedData.push(rowObject);
   }
 
@@ -459,6 +464,29 @@ export function mergeAgeAndHouseData(
         "Year 6": ageEntry['Year 6'],
         "Year 7": ageEntry['Year 7'],
         "Year 8": ageEntry['Year 8']
+      };
+      mergedData.push(mergedEntry);
+    }
+  }
+
+  // Add any remaining house entries that were not in age data
+  for (const characterName in houseDataMap) {
+    if (!ageData.find(ageEntry => ageEntry['Character Name'] === characterName)) {
+      const houseEntry = houseDataMap[characterName];
+      const mergedEntry = {
+        "Discord Username": houseEntry['Discord Username'],
+        "VS Username": houseEntry['VS Username'],
+        "Character Name": characterName,
+        "Social Class": houseEntry['Social Class'],
+        "Affiliation": houseEntry['House'],
+        "PvE Deaths": 0,
+        "Year of Maturity": 0,
+        "Current Age": 0,
+        "Year 4": 0,
+        "Year 5": 0,
+        "Year 6": 0,
+        "Year 7": 0,
+        "Year 8": 0
       };
       mergedData.push(mergedEntry);
     }

@@ -7,7 +7,42 @@ async function main(): Promise<void> {
 
   // const jwt: Auth.JWT = await getAuthenticatedClient('service-account-key.json', ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets.readonly']);
 
-  await mergeAllDataFiles();
+  // Get all files in the /merged_data/ folder.
+  const mergedDataFiles = readFilesInDirectory('./merged_data/', '.json');
+
+  // Combine all merged data files into a single array, adding a "Date" field to each entry.
+  let allMergedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number; "Date": string }[] = [];
+  for (const fileName of mergedDataFiles) {
+    const filePath = `./merged_data/${fileName}`;
+    let fileData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number; "Date": string }[] = [];
+    try {
+      fileData = loadDataFromFile<typeof fileData>(filePath);
+    } catch (error) {
+      console.warn(`Warning: Could not load merged data from file ${filePath}. Skipping this file. Error: ${(error as Error).message}`);
+      continue;
+    }
+
+    // Extract date from filename.
+    const dateParts = fileName.replace('.json', '').split('-');
+    let fileDate: Date | null = null;
+    if (dateParts.length === 3) {
+      const month = parseInt(dateParts[0], 10);
+      const day = parseInt(dateParts[1], 10);
+      const year = parseInt(dateParts[2], 10);
+      fileDate = new Date(year, month - 1, day);
+    }
+
+    // Add "Date" field to each entry.
+    for (const entry of fileData) {
+      entry.Date = fileDate!.toISOString().split('T')[0];
+      allMergedData.push(entry);
+    }
+  }
+
+  // Save the combined data to a new JSON file.
+  const combinedFilePath = './merged_data/all_merged_data.json';
+  saveParsedDataToFile(allMergedData, combinedFilePath);
+  console.log(`Saved combined merged data to ${combinedFilePath}`);
 }
 
 main();

@@ -12,7 +12,7 @@ import { saveParsedDataToFile } from './filemanagement';
  * the second dimension are the rows, and the third dimension are the cells.
  * @returns An array of objects of all characters.
  */
-export function parseHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] {
+export function parseHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][] }): { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] {
   const parsedData: { "Social Class": string; "House": string; "Role": string; "Character Name": string; "VS Username": string; "Discord Username": string; "Timezone": string; "Comments": string }[] = [];
 
   for (const sheetName in allSheetData) {
@@ -70,7 +70,7 @@ export function parseHouseData(allSheetData: { [sheetName: string]: { cellValue:
  * the second dimension is the row, and the third dimension are the cells.
  * @returns A cleaned version of the input data.
  */
-export function cleanHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]}): { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][]} {
+export function cleanHouseData(allSheetData: { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][] }): { [sheetName: string]: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][] } {
   // First, ignore any sheet named 'Overview'
   delete allSheetData['Overview'];
 
@@ -140,7 +140,7 @@ export function cleanHouseData(allSheetData: { [sheetName: string]: { cellValue:
           tables.push({ socialClass: 'Commoner', startIndex: commonerIndex + 1, endIndex: sheetData.length });
         }
 
-        const newSheetData: {cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat}[][] = [];
+        const newSheetData: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[][] = [];
         newSheetData.push(expectedHeaders.map(header => ({ cellValue: header, cellFormat: {} }))); // Add headers
 
         // Get the headers of the old format by looking at the second row of the
@@ -181,19 +181,19 @@ export function cleanHouseData(allSheetData: { [sheetName: string]: { cellValue:
               }
             }
 
-            const newRow: {cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat}[] = [];
-            newRow.push({cellValue: socialClass, cellFormat: {}}); // Social Class
-            newRow.push({cellValue: row[0] ? row[0].cellValue : '', cellFormat: row[0]?.cellFormat}); // Role
-            newRow.push({cellValue: row[1] ? row[1].cellValue : '', cellFormat: row[1]?.cellFormat}); // Character Name
-            newRow.push({cellValue: row[2] ? row[2].cellValue : '', cellFormat: row[2]?.cellFormat}); // VS Username (IGN)
-            newRow.push({cellValue: row[3] ? row[3].cellValue : '', cellFormat: row[3]?.cellFormat}); // Discord Username (Discord)
+            const newRow: { cellValue: string | number | boolean; cellFormat: sheets_v4.Schema$CellFormat }[] = [];
+            newRow.push({ cellValue: socialClass, cellFormat: {} }); // Social Class
+            newRow.push({ cellValue: row[0] ? row[0].cellValue : '', cellFormat: row[0]?.cellFormat }); // Role
+            newRow.push({ cellValue: row[1] ? row[1].cellValue : '', cellFormat: row[1]?.cellFormat }); // Character Name
+            newRow.push({ cellValue: row[2] ? row[2].cellValue : '', cellFormat: row[2]?.cellFormat }); // VS Username (IGN)
+            newRow.push({ cellValue: row[3] ? row[3].cellValue : '', cellFormat: row[3]?.cellFormat }); // Discord Username (Discord)
             // Timezone might be missing in some old formats
             if (!hasTimezone) {
-              newRow.push({cellValue: '', cellFormat: {}}); // Timezone empty
-              newRow.push({cellValue: row[4] ? row[4].cellValue : '', cellFormat: row[4]?.cellFormat}); // Comments
+              newRow.push({ cellValue: '', cellFormat: {} }); // Timezone empty
+              newRow.push({ cellValue: row[4] ? row[4].cellValue : '', cellFormat: row[4]?.cellFormat }); // Comments
             } else {
-              newRow.push({cellValue: row[4] ? row[4].cellValue : '', cellFormat: row[4]?.cellFormat}); // Timezone
-              newRow.push({cellValue: row[5] ? row[5].cellValue : '', cellFormat: row[5]?.cellFormat}); // Comments
+              newRow.push({ cellValue: row[4] ? row[4].cellValue : '', cellFormat: row[4]?.cellFormat }); // Timezone
+              newRow.push({ cellValue: row[5] ? row[5].cellValue : '', cellFormat: row[5]?.cellFormat }); // Comments
             }
 
             newSheetData.push(newRow);
@@ -262,7 +262,7 @@ export function cleanAgeData(sheetData: (string | number | boolean)[][]): (strin
         break;
       }
     }
-  
+
 
     if (isAlternativeFormat) {
       console.log(`Remapping alternative headers in Age sheet to expected headers.`);
@@ -289,7 +289,7 @@ export function cleanAgeData(sheetData: (string | number | boolean)[][]): (strin
           newSheetData.push(newRow);
         }
         sheetData = newSheetData;
-      } 
+      }
       else {
         // Simply renaming of headers, so just replace them
         sheetData[0] = expectedHeaders.map(header => header);
@@ -356,7 +356,7 @@ export function parseAgeData(sheetData: (string | number | boolean)[][]): { "Dis
  */
 export async function processAgeSheets(jwt: Auth.JWT, folderId: string): Promise<void> {
   const drive = getDriveClient(jwt);
-  
+
   const dayFiles = await getAllDayFilesInMonthFolders(drive, folderId);
 
   const sheets = getSheetsClient(jwt);
@@ -373,7 +373,7 @@ export async function processAgeSheets(jwt: Auth.JWT, folderId: string): Promise
     saveParsedDataToFile(parsedData, savePath);
   }
 }
- 
+
 
 /**
  * Given the ID of a Google Drive folder containing Great Houses Citizens
@@ -385,7 +385,7 @@ export async function processAgeSheets(jwt: Auth.JWT, folderId: string): Promise
  */
 export async function processGreatHousesCitizensSheets(jwt: Auth.JWT, folderId: string): Promise<void> {
   const drive = getDriveClient(jwt);
-  
+
   const dayFiles = await getAllDayFilesInMonthFolders(drive, folderId);
 
   const sheets = getSheetsClient(jwt);
@@ -463,6 +463,6 @@ export function mergeAgeAndHouseData(
       mergedData.push(mergedEntry);
     }
   }
-  
+
   return mergedData;
 }

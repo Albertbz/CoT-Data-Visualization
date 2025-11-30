@@ -67,7 +67,7 @@ export const rawAffiliations = Array.from(new Set(dataList.map(d => d['Affiliati
 
 // Alias groups to aggregate related affiliations under canonical labels
 export const aliasGroups: string[][] = [
-  ['Locke', 'Nightlocke'],
+  ['Nightlocke', 'Locke'],
   ['Ayrin', 'Du V\u011bzos'],
   ['Stout', 'Aetos'],
   ['Sabr', 'Merrick'],
@@ -132,6 +132,22 @@ export const dataForStack = dates.map(dateStr => {
   affiliations.forEach(group => {
     const members = canonicalMembers[group] || [group];
     obj[group] = members.reduce((s, m) => s + ((dateGroups[dateStr].byAffiliation[m] || []).length), 0);
+  });
+  return obj as { date: Date } & Record<string, number>;
+});
+
+// Prepare social-class series and stacked data
+export const socialClasses = Array.from(new Set(Object.values(dateGroups).flatMap(g => Object.keys(g.bySocialClass))));
+
+export const socialSeries = socialClasses.map(cls => ({
+  affiliation: cls,
+  values: dates.map(dateStr => ({ date: new Date(dateStr), dateStr, count: (dateGroups[dateStr].bySocialClass[cls] || []).length } as AffVal))
+}));
+
+export const dataForStackByClass = dates.map(dateStr => {
+  const obj = { date: new Date(dateStr) } as Record<string, number | Date> & { date: Date };
+  socialClasses.forEach(cls => {
+    obj[cls] = (dateGroups[dateStr].bySocialClass[cls] || []).length;
   });
   return obj as { date: Date } & Record<string, number>;
 });

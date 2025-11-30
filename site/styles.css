@@ -31,3 +31,44 @@ svg {
   max-width: 960px;
   margin: auto
 }
+
+/* Chart container styling */
+#visualization {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.01);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
+}
+
+/* Prevent text selection when clicking/dragging inside the chart area */
+#visualization,
+#visualization * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Chart type buttons */
+.chart-btn {
+  padding: 6px 10px;
+  margin-right: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  /* faint outline by default */
+  border-radius: 8px;
+  transition: transform 150ms ease
+}
+
+.chart-btn:hover {
+  transform: scale(1.02);
+}
+
+.chart-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 6px 22px rgba(59, 130, 246, 0.12);
+}

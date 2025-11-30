@@ -68,10 +68,11 @@ export const rawAffiliations = Array.from(new Set(dataList.map(d => d['Affiliati
 // Alias groups to aggregate related affiliations under canonical labels
 export const aliasGroups: string[][] = [
   ['Nightlocke', 'Locke'],
-  ['Ayrin', 'Du V\u011bzos'],
+  ['Ayrin', 'Du V\u011bzos', 'Mercenary'],
   ['Stout', 'Aetos'],
   ['Sabr', 'Merrick'],
   ['Rivertal', 'Dayne', 'Windstrom'],
+  ['Farring', 'Davila']
 ];
 
 const normKey = (s: string) => s

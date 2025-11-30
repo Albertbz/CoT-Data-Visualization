@@ -41,6 +41,27 @@ svg {
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
 }
 
+/* make the visualization container a positioning context for controls */
+#visualization {
+  position: relative;
+}
+
+/* Bottom-left ordering control */
+.order-control {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  z-index: 10;
+}
+
+.order-control .chart-btn {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 /* Prevent text selection when clicking/dragging inside the chart area */
 #visualization,
 #visualization * {
@@ -71,4 +92,10 @@ svg {
 .chart-btn.active {
   border-color: var(--accent);
   box-shadow: 0 6px 22px rgba(59, 130, 246, 0.12);
+}
+
+/* Ensure SVG images sized by attributes still render crisply; allow smaller images via CSS if needed */
+g.legend-item image.legend-icon {
+  width: 36px;
+  height: 36px;
 }

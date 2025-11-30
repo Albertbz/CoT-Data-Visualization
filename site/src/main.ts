@@ -41,10 +41,69 @@ function setActiveGroupButton() {
 const canonicalOrderAffiliations = [...affiliations].sort((a, b) => a.localeCompare(b));
 const canonicalOrderSocial = [...socialClasses].sort((a, b) => a.localeCompare(b));
 
-// compute stacking order (ensure Wanderer at bottom if present)
+// Preferred ordering for social classes in the legend (top -> bottom)
+const SOCIAL_PREFERRED_LEGEND_ORDER = ['Ruler', 'Noble', 'Notable', 'Commoner'];
+
+// --- Customization: color and image mappings ---
+// Affiliation colors
+const CUSTOM_COLORS_AFF: Record<string, string> = {
+  'Ayrin': '#b10202',
+  'Sabr': '#5a3286',
+  'Stout': '#d4edbc',
+  'Farring': '#bfe0f6',
+  'Wildhart': '#753800',
+  'Nightlocke': '#11734b',
+  'Rivertal': '#0a53a8',
+  'Wanderer': '#e5e5e5'
+};
+// Social class colors
+const CUSTOM_COLORS_SOC: Record<string, string> = {
+  'Commoner': '#11734b',
+  'Notable': '#d4edbc',
+  'Noble': '#473821',
+  'Ruler': '#b10202'
+};
+
+// Legend image paths for affiliations.
+const LEGEND_IMAGE_PATHS: Record<string, string> = {
+  'Ayrin': '../images/ayrin.png',
+  'Sabr': '../images/sabr.png',
+  'Stout': '../images/stout.png',
+  'Farring': '../images/farring.png',
+  'Wildhart': '../images/wildhart.png',
+  'Nightlocke': '../images/nightlocke.png',
+  'Rivertal': '../images/rivertal.png',
+  'Wanderer': '../images/wanderer.png'
+};
+
+function colorOf(key: string) {
+  return CUSTOM_COLORS_AFF[key] || CUSTOM_COLORS_SOC[key] || color(key);
+}
+
+// Backdrop colors (used for actual line strokes and data-point fills).
+// Populate like: BACKDROP_COLORS['House A'] = '#112233'
+const BACKDROP_COLORS: Record<string, string> = {
+  'Ayrin': '#ffcfc9',
+  'Sabr': '#e6cff2',
+  'Stout': '#4ba07d',
+  'Farring': '#4b7cb4',
+  'Wildhart': '#ffc8aa',
+  'Nightlocke': '#d4edbc',
+  'Rivertal': '#bfe1f6',
+  'Wanderer': '#3d3d3d',
+  'Ruler': '#ffcfc9',
+  'Noble': '#ffe5a0',
+  'Notable': '#11734b',
+  'Commoner': '#d4edbc'
+};
+function backdropOf(key: string) {
+  return BACKDROP_COLORS[key] || color(key);
+}
+
+// compute stacking order (ensure Wanderer is drawn last so it appears on top)
 let stackKeys = [...canonicalOrderAffiliations];
 const wandererIndex = stackKeys.indexOf('Wanderer');
-if (wandererIndex > 0) { stackKeys.splice(wandererIndex, 1); stackKeys.unshift('Wanderer'); }
+if (wandererIndex > 0) { stackKeys.splice(wandererIndex, 1); stackKeys.push('Wanderer'); }
 
 // Track which keys are active (visible). Maintain separate sets per grouping so selections persist when switching.
 const activeByAffiliations = new Set<string>(affiliations);
@@ -56,7 +115,19 @@ const STORAGE_KEY = 'cot_vis_state_v1';
 type SavedState = { chartType?: string; activeAffiliationsAff?: string[]; activeAffiliationsSocial?: string[]; grouping?: string };
 // Whether to include Wanderer-affiliated characters when grouping by social class
 let includeWanderers = true;
-type SavedStateExt = SavedState & { includeWanderers?: boolean };
+type SavedStateExt = SavedState & { includeWanderers?: boolean; orderMethod?: string };
+
+// Ordering heuristics available for stacking. Default: 'variance'.
+type OrderMethod = 'variance' | 'coefvar' | 'mean-weighted' | 'alphabetical' | 'deriv-std';
+let orderMethod: OrderMethod = 'variance';
+
+const ORDER_METHODS: { id: OrderMethod; label: string }[] = [
+  { id: 'variance', label: 'Variance' },
+  { id: 'coefvar', label: 'CoefVar' },
+  { id: 'mean-weighted', label: 'Mean×Var' },
+  { id: 'deriv-std', label: 'Deriv SD' },
+  { id: 'alphabetical', label: 'Alpha' }
+];
 
 function saveState() {
   try {
@@ -65,7 +136,8 @@ function saveState() {
       activeAffiliationsAff: Array.from(activeByAffiliations),
       activeAffiliationsSocial: Array.from(activeBySocial),
       grouping,
-      includeWanderers
+      includeWanderers,
+      orderMethod
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch { }
@@ -84,6 +156,11 @@ function loadState() {
     if (parsed.chartType) chartType = parsed.chartType as 'stacked' | 'lines';
     if (parsed.grouping) grouping = parsed.grouping === 'social' ? 'social' : 'affiliation';
     if (typeof parsed.includeWanderers === 'boolean') includeWanderers = parsed.includeWanderers;
+    if (parsed.orderMethod && typeof parsed.orderMethod === 'string') {
+      if ((['variance', 'coefvar', 'mean-weighted', 'alphabetical', 'deriv-std'] as string[]).includes(parsed.orderMethod)) {
+        orderMethod = parsed.orderMethod as OrderMethod;
+      }
+    }
     // set current active reference according to grouping
     activeAffiliations = grouping === 'social' ? activeBySocial : activeByAffiliations;
   } catch { }
@@ -92,6 +169,46 @@ function loadState() {
 loadState();
 setActiveChartButton();
 setActiveGroupButton();
+
+// Build ordering control UI (bottom-left buttons)
+// buildOrderControls() was used previously to eagerly create the control.
+// Control is now created lazily by `updateOrderControls()` to match the
+// behavior of the `Include Wanderers` button and avoid always injecting DOM.
+function updateOrderControls() {
+  const container = document.getElementById('visualization');
+  if (!container) return;
+  let ctrl = document.getElementById('order-control') as HTMLDivElement | null;
+  // Lazily create the control only when needed (like the wanderer button)
+  if (!ctrl && grouping === 'affiliation' && chartType === 'stacked') {
+    // build it
+    const created = document.createElement('div');
+    created.id = 'order-control';
+    created.className = 'order-control';
+    ORDER_METHODS.forEach(m => {
+      const btn = document.createElement('button');
+      btn.className = 'chart-btn';
+      btn.textContent = m.label;
+      btn.dataset['method'] = m.id;
+      if (m.id === orderMethod) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        orderMethod = m.id;
+        created.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        saveState();
+        updateStackKeys();
+        updateChart();
+      });
+      created.appendChild(btn);
+    });
+    container.appendChild(created);
+    ctrl = created;
+  }
+  // If control exists, show/hide depending on context
+  if (ctrl) {
+    ctrl.style.display = (grouping === 'affiliation' && chartType === 'stacked') ? 'inline-block' : 'none';
+  }
+}
+updateOrderControls();
 
 // Axes groups
 const xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', 'translate(0,350)');
@@ -161,9 +278,59 @@ function drawStackedAreas(activeKeys?: string[]) {
     .append('path')
     .attr('class', 'area')
     .attr('d', d => areaGen(d) || '')
-    .attr('fill', (d: d3.Series<StackDatum, string>) => color(d.key))
+    .attr('fill', (d: d3.Series<StackDatum, string>) => backdropOf(d.key))
     .attr('stroke', 'none')
     .attr('opacity', 0.9);
+
+  // Add affiliation icons onto the stacked areas (if available).
+  // Remove any previous icons first.
+  svg.selectAll('image.area-icon').remove();
+  if (grouping === 'affiliation') {
+    const ICON_MAX = 28; const ICON_MIN = 10;
+    (stackedData as d3.Series<StackDatum, string>[]).forEach(series => {
+      const key = series.key;
+      const imgPath = LEGEND_IMAGE_PATHS[key];
+      if (!imgPath) return; // only add icon when we have an image
+      // Find the index with the largest available pixel height for this series
+      let bestIdx = -1;
+      let bestHeightPx = -Infinity;
+      for (let i = 0; i < series.length; i++) {
+        const seg = series[i] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
+        const v0 = seg[0] as number; const v1 = seg[1] as number;
+        const heightVal = v1 - v0;
+        if (!(heightVal > 0)) continue; // skip zero-height segments
+        // compute pixel height of the band at this index
+        const topPx = yScale(v1);
+        const botPx = yScale(v0);
+        const heightPx = Math.abs(botPx - topPx);
+        if (heightPx > bestHeightPx) { bestHeightPx = heightPx; bestIdx = i; }
+      }
+      if (bestIdx < 0) return;
+      const bestSeg = series[bestIdx] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
+      const date = bestSeg.data.date;
+      const vMid = ((bestSeg[0] as number) + (bestSeg[1] as number)) / 2;
+      let x = xScale(date);
+      let y = yScale(vMid);
+      // If the available pixel height is very small, skip the icon
+      if (bestHeightPx < ICON_MIN * 0.6) return;
+      // compute icon size based on available height, clamped between ICON_MIN and ICON_MAX
+      const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(bestHeightPx * 0.7)));
+      // clamp to chart area padding (50..750 x, 50..350 y)
+      const minX = 50 + iconSize / 2; const maxX = 750 - iconSize / 2;
+      const minY = 50 + iconSize / 2; const maxY = 350 - iconSize / 2;
+      x = Math.max(minX, Math.min(maxX, x));
+      y = Math.max(minY, Math.min(maxY, y));
+      svg.append('image')
+        .attr('class', 'area-icon')
+        .attr('href', imgPath)
+        .attr('width', iconSize)
+        .attr('height', iconSize)
+        .attr('x', x - iconSize / 2)
+        .attr('y', y - iconSize / 2)
+        .attr('opacity', 0.95)
+        .style('pointer-events', 'none');
+    });
+  }
 
   // Add hover handlers to show affiliation + social-class breakdown for the hovered date
   svg.selectAll<SVGPathElement, d3.Series<StackDatum, string>>('.area')
@@ -214,23 +381,100 @@ function drawStackedAreas(activeKeys?: string[]) {
           Rulers: ${classes.ruler}
         `);
       }
-      // position tooltip near cursor
-      tooltip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY - 28) + 'px');
+      // position tooltip near cursor (relative to container)
+      positionTooltip(event as unknown as MouseEvent, 12, -28);
     })
     .on('mouseout', () => tooltip.style('display', 'none'));
 }
 
 // Hover overlay & tooltip (placed inside `#visualization` so it's scoped to the chart container)
 const tooltip = d3.select('#visualization').append('div').style('position', 'absolute').style('background', 'rgba(0,0,0,0.7)').style('color', 'white').style('padding', '5px').style('border-radius', '5px').style('display', 'none');
+// Position tooltip relative to the `#visualization` container (tooltip is a child of it).
+function positionTooltip(event: MouseEvent, offsetX = 12, offsetY = -28) {
+  const container = document.getElementById('visualization');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const left = (event.clientX - rect.left) + offsetX;
+  const top = (event.clientY - rect.top) + offsetY;
+  tooltip.style('left', left + 'px').style('top', top + 'px');
+}
 const bisectDate = d3.bisector((d: StackDatum) => d.date).left;
 
 function updateStackKeys() {
+  // Compute a variability metric (population variance) per key and
+  // order stack keys ascending by variance so the least-variable
+  // groups sit at the bottom of the stack. This reduces how much
+  // changes in below areas move the areas above them.
+  const computeVariance = (arr: number[]) => {
+    if (!arr.length) return 0;
+    const mean = arr.reduce((s, v) => s + v, 0) / arr.length;
+    const variance = arr.reduce((s, v) => s + (v - mean) * (v - mean), 0) / arr.length;
+    return variance;
+  };
+  const computeStd = (arr: number[]) => Math.sqrt(computeVariance(arr));
+  const computeCoefVar = (arr: number[]) => {
+    const mean = arr.reduce((s, v) => s + v, 0) / (arr.length || 1);
+    if (mean === 0) return Infinity; // put zero-mean series towards the top (unstable)
+    return computeStd(arr) / mean;
+  };
+  const computeMeanWeighted = (arr: number[]) => {
+    const mean = arr.reduce((s, v) => s + v, 0) / (arr.length || 1);
+    return computeVariance(arr) * mean;
+  };
+  const metricFor = (values: number[]) => {
+    switch (orderMethod) {
+      case 'variance': return computeVariance(values);
+      case 'coefvar': return computeCoefVar(values);
+      case 'mean-weighted': return computeMeanWeighted(values);
+      case 'deriv-std': {
+        // compute first differences and return their standard deviation
+        if (!values || values.length < 2) return 0;
+        const diffs: number[] = [];
+        for (let i = 0; i < values.length - 1; i++) {
+          diffs.push(values[i + 1] - values[i]);
+        }
+        return computeStd(diffs);
+      }
+      case 'alphabetical': return 0; // alphabetical handled separately
+      default: return computeVariance(values);
+    }
+  };
+
+  if (orderMethod === 'alphabetical') {
+    // Keep canonical (alphabetical) order for the chosen grouping
+    if (grouping === 'social') {
+      // For social grouping, ignore canonical alphabetical order and
+      // enforce the preferred legend order so 'Ruler' is at bottom
+      // and 'Commoner' at top.
+      stackKeys = SOCIAL_PREFERRED_LEGEND_ORDER.filter(k => socialClasses.includes(k));
+      const rest = socialClasses.filter(k => !stackKeys.includes(k));
+      if (rest.length) stackKeys = [...stackKeys, ...rest];
+    }
+    else {
+      stackKeys = [...canonicalOrderAffiliations];
+      const wi = stackKeys.indexOf('Wanderer'); if (wi > 0) { stackKeys.splice(wi, 1); stackKeys.push('Wanderer'); }
+    }
+    return;
+  }
+
   if (grouping === 'social') {
-    stackKeys = [...canonicalOrderSocial];
+    // Strictly enforce the requested social-class stacking order (bottom -> top):
+    // Ruler, Noble, Notable, Commoner. Do NOT rely on canonical/alphabetical
+    // ordering — use only the specified order. If any of these classes are
+    // missing from the data, they'll be omitted. Any additional social classes
+    // present will be appended afterwards in the order they appear in
+    // `socialClasses` (the data-derived list), not the canonical/alphabetical order.
+    stackKeys = SOCIAL_PREFERRED_LEGEND_ORDER.filter(k => socialClasses.includes(k));
+    const rest = socialClasses.filter(k => !stackKeys.includes(k));
+    if (rest.length) stackKeys = [...stackKeys, ...rest];
   } else {
-    stackKeys = [...canonicalOrderAffiliations];
-    const wi = stackKeys.indexOf('Wanderer');
-    if (wi > 0) { stackKeys.splice(wi, 1); stackKeys.unshift('Wanderer'); }
+    const metrics = canonicalOrderAffiliations.map(key => {
+      const values = (dataForStack as StackDatum[]).map((row: StackDatum) => Number(row[key] || 0));
+      return { key, m: metricFor(values) };
+    });
+    metrics.sort((a, b) => a.m - b.m);
+    stackKeys = metrics.map(v => v.key);
+    const wi = stackKeys.indexOf('Wanderer'); if (wi > 0) { stackKeys.splice(wi, 1); stackKeys.push('Wanderer'); }
   }
 }
 updateStackKeys();
@@ -271,24 +515,33 @@ function affiliationCountsForSocial(dateStr: string, cls: string) {
 function updateWandererButton() {
   const container = document.getElementById('visualization');
   if (!container) return;
-  let btn = document.getElementById('btn-wanderers') as HTMLButtonElement | null;
-  if (!btn) {
-    btn = document.createElement('button');
+  // Create a small control container like the ordering controls so it
+  // shares placement and styling. This is created lazily and shown only
+  // when grouping === 'social' (mirrors the prior behavior).
+  let ctrl = document.getElementById('wanderer-control') as HTMLDivElement | null;
+  if (!ctrl) {
+    const created = document.createElement('div');
+    created.id = 'wanderer-control';
+    created.className = 'order-control';
+    const btn = document.createElement('button');
     btn.id = 'btn-wanderers';
     btn.className = 'chart-btn';
+    btn.textContent = 'Include Wanderers';
     btn.addEventListener('click', () => {
       includeWanderers = !includeWanderers;
-      btn!.classList.toggle('active', includeWanderers);
+      btn.classList.toggle('active', includeWanderers);
       saveState();
       updateChart();
     });
-    container.appendChild(btn);
+    created.appendChild(btn);
+    container.appendChild(created);
+    ctrl = created;
   }
-  // Show the button only for social grouping
-  btn.style.display = grouping === 'social' ? 'inline-block' : 'none';
-  // Label remains constant; active class indicates current include/exclude state
-  btn.textContent = 'Include Wanderers';
-  btn.classList.toggle('active', includeWanderers);
+  // Show/hide like the order controls: only visible for social grouping
+  ctrl.style.display = grouping === 'social' ? 'flex' : 'none';
+  // Update active state of the inner button to reflect current setting
+  const inner = document.getElementById('btn-wanderers') as HTMLButtonElement | null;
+  if (inner) inner.classList.toggle('active', includeWanderers);
 }
 
 // Build or rebuild legend according to current grouping
@@ -296,6 +549,23 @@ const legendX = 770; const legendY = 60;
 function rebuildLegend() {
   svg.selectAll('g.legend').remove();
   const keys = grouping === 'social' ? canonicalOrderSocial : canonicalOrderAffiliations;
+  // For the legend, display 'Wanderer' at the bottom (last item), but keep
+  // the canonical order unchanged for other uses. We'll compute a legend-specific
+  // ordering so the stacked area (which uses `stackKeys`) can still place
+  // Wanderer at the top while the legend shows it last.
+  const legendKeys = ((): string[] => {
+    if (grouping === 'social') {
+      // preferred social ordering for legend (top -> bottom)
+      const pref = SOCIAL_PREFERRED_LEGEND_ORDER.filter(k => canonicalOrderSocial.includes(k));
+      const rest = canonicalOrderSocial.filter(k => !pref.includes(k));
+      return [...pref, ...rest];
+    } else {
+      const arr = [...keys];
+      const wi = arr.indexOf('Wanderer');
+      if (wi >= 0) { arr.splice(wi, 1); arr.push('Wanderer'); }
+      return arr;
+    }
+  })();
   // Switch the active reference and preserve previous selections for each grouping
   if (grouping === 'social') {
     activeAffiliations = activeBySocial;
@@ -306,23 +576,76 @@ function rebuildLegend() {
   // If the user intentionally has no active keys, keep that state so the legend shows correctly.
   color.domain(keys as readonly string[]);
   const legend = svg.append('g').attr('class', 'legend');
-  const legendItems = legend.selectAll<SVGGElement, string>('g.legend-item').data(keys).enter().append('g').attr('class', 'legend-item').attr('transform', (d, i) => `translate(${legendX}, ${legendY + i * 18})`).style('cursor', 'pointer').on('click', function (event, key) { if (activeAffiliations.has(key)) activeAffiliations.delete(key); else activeAffiliations.add(key); updateLegend(); updateChart(); saveState(); });
-  legendItems.append('rect').attr('width', 12).attr('height', 12).attr('fill', d => color(d));
-  legendItems.append('text').attr('x', 16).attr('y', 10).attr('fill', 'white').attr('font-size', '12px').text(d => d);
+  // larger icons and more padding so backdrops are clearly visible
+  const ICON_SIZE = 32;
+  const ITEM_SPACING = 40; // vertical spacing between legend items (increased for larger icons)
+  const TEXT_X = ICON_SIZE + 8;
+  // Use the legend-specific ordering (legendKeys) for rendering the legend items
+  const legendItems = legend.selectAll<SVGGElement, string>('g.legend-item').data(legendKeys).enter().append('g').attr('class', 'legend-item').attr('transform', (d, i) => `translate(${legendX}, ${legendY + i * ITEM_SPACING})`).style('cursor', 'pointer').on('click', function (event, key) { if (activeAffiliations.has(key)) activeAffiliations.delete(key); else activeAffiliations.add(key); updateLegend(); updateChart(); saveState(); });
+  // For affiliations: show image if provided; otherwise show a colored rect.
+  legendItems.each(function (d) {
+    const g = d3.select(this);
+    const imgPath = LEGEND_IMAGE_PATHS[d];
+    if (imgPath) {
+      g.append('image').attr('class', 'legend-icon').attr('href', imgPath).attr('width', ICON_SIZE).attr('height', ICON_SIZE).attr('x', 0).attr('y', -4);
+    }
+  });
+  // Name after the image; create text then insert a backdrop rect sized to the text bbox
+  legendItems.each(function (d) {
+    const g = d3.select(this);
+    const imgPath = LEGEND_IMAGE_PATHS[d];
+    // If there is no image, move the text closer to the left edge
+    const txtX = imgPath ? TEXT_X : 6;
+    const txt = g.append('text').attr('x', txtX).attr('y', 16).attr('fill', d => colorOf(d)).attr('font-size', '13px').text(String(d));
+    // measure text and insert backdrop behind it
+    try {
+      const node = txt.node() as SVGTextElement;
+      const bb = node.getBBox();
+      const pad = 12;
+      const bx = bb.x - 6;
+      const by = bb.y - 2;
+      const bw = bb.width + pad;
+      const bh = bb.height + 4;
+      g.insert('rect', 'text').attr('class', 'legend-backdrop').attr('x', bx).attr('y', by).attr('width', bw).attr('height', bh).attr('rx', 4).attr('ry', 4).attr('fill', backdropOf(d)).lower();
+      // center the icon vertically relative to the text backdrop if present
+      const icon = g.select<SVGElement>('.legend-icon');
+      if (!icon.empty()) {
+        const centerY = by + bh / 2;
+        const iconY = centerY - ICON_SIZE / 2;
+        icon.attr('y', iconY);
+      }
+    } catch {
+      // getBBox can fail in some environments; fall back to a simple rect
+      const fallbackBy = -2;
+      const fallbackBh = 20;
+      g.insert('rect', 'text').attr('class', 'legend-backdrop').attr('x', txtX - 4).attr('y', fallbackBy).attr('width', 120).attr('height', fallbackBh).attr('rx', 4).attr('ry', 4).attr('fill', backdropOf(d)).lower();
+      const icon = g.select<SVGElement>('.legend-icon');
+      if (!icon.empty()) {
+        const centerY = fallbackBy + fallbackBh / 2;
+        const iconY = centerY - ICON_SIZE / 2;
+        icon.attr('y', iconY);
+      }
+    }
+  });
   // Set initial legend appearance to match the active set
   updateLegend();
   // Update HTML wanderer button visibility/state (shown for social grouping)
   updateWandererButton();
 }
-function updateLegend() { svg.selectAll<SVGRectElement, string>('g.legend-item').select('rect').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2); svg.selectAll<SVGTextElement, string>('g.legend-item').select('text').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.4); }
+function updateLegend() {
+  svg.selectAll<SVGGElement, string>('g.legend-item').select('rect').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
+  svg.selectAll<SVGGElement, string>('g.legend-item').select('image').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
+  svg.selectAll<SVGGElement, string>('g.legend-item').select('rect.legend-backdrop').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
+  svg.selectAll<SVGTextElement, string>('g.legend-item').select('text').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.8);
+}
 
 rebuildLegend();
 
 // Wire chart & grouping buttons
-btnStack?.addEventListener('click', () => { chartType = 'stacked'; setActiveChartButton(); updateChart(); saveState(); });
-btnLines?.addEventListener('click', () => { chartType = 'lines'; setActiveChartButton(); updateChart(); saveState(); });
-btnGroupAff?.addEventListener('click', () => { grouping = 'affiliation'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); saveState(); });
-btnGroupClass?.addEventListener('click', () => { grouping = 'social'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); saveState(); });
+btnStack?.addEventListener('click', () => { chartType = 'stacked'; setActiveChartButton(); updateChart(); updateOrderControls(); saveState(); });
+btnLines?.addEventListener('click', () => { chartType = 'lines'; setActiveChartButton(); updateChart(); updateOrderControls(); saveState(); });
+btnGroupAff?.addEventListener('click', () => { grouping = 'affiliation'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); updateOrderControls(); saveState(); });
+btnGroupClass?.addEventListener('click', () => { grouping = 'social'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); updateOrderControls(); saveState(); });
 
 svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height', 300).attr('fill', 'transparent').attr('class', 'chart-overlay')
   .on('mousemove', (event) => {
@@ -351,7 +674,7 @@ svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height',
     const lines = visible.length ? visible.map(k => `${k}: ${d0[k] || 0}`).join('<br/>') : 'None';
     const total = keys.reduce((s, k) => s + (d0[k] || 0), 0);
     tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/>Total: ${total}<br/>${lines}`);
-    tooltip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY - 28) + 'px');
+    positionTooltip(event as unknown as MouseEvent, 12, -28);
   })
   .on('mouseout', () => tooltip.style('display', 'none'));
 
@@ -365,9 +688,10 @@ function drawLinesForSeries(seriesArray: { affiliation: string; values: AffVal[]
   groups.each(function (d) {
     const g = d3.select(this);
     const groupAff = (d as { affiliation: string }).affiliation;
-    g.append('path').attr('class', 'aff-line').attr('fill', 'none').attr('stroke', color((d as { affiliation: string }).affiliation)).attr('stroke-width', 1.5).datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lineGen(vals) || '' : '');
+    g.append('path').attr('class', 'aff-line').attr('fill', 'none').attr('stroke', backdropOf((d as { affiliation: string }).affiliation)).attr('stroke-width', 1.5).datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lineGen(vals) || '' : '');
     const pts = g.selectAll('.aff-point').data(d.values.filter(v => (v.count || 0) > 0));
-    pts.enter().append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 1).attr('fill', color((d as { affiliation: string }).affiliation));
+    // Keep point elements for potential layout/interaction, but make them invisible.
+    pts.enter().append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation));
     const hit = g.selectAll('.aff-hit').data(d.values.filter(v => (v.count || 0) > 0));
     hit.enter().append('circle').attr('class', 'aff-hit').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 10).attr('fill', 'transparent').style('pointer-events', 'all').attr('data-affiliation', groupAff);
   });
@@ -401,7 +725,7 @@ function attachHitHandlers() {
         tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/><strong>${key}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
       }
     })
-    .on('mousemove', (event) => tooltip.style('left', (event.pageX + 10) + 'px').style('top', (event.pageY - 28) + 'px'))
+    .on('mousemove', (event) => positionTooltip(event as unknown as MouseEvent, 10, -28))
     .on('mouseout', () => tooltip.style('display', 'none'));
 }
 
@@ -417,9 +741,13 @@ function updateChart() {
     svg.selectAll('.chart-overlay').style('display', null);
     // remove any existing line groups
     svg.selectAll('g.lines-layer').remove();
+    // ensure any area icons are present (drawStackedAreas handles creation)
+    // nothing to do here
   } else {
     svg.selectAll('.area').style('display', 'none');
     svg.selectAll('.chart-overlay').style('display', 'none');
+    // remove area icons when switching to line mode
+    svg.selectAll('image.area-icon').remove();
     // ensure we have line groups for the current grouping
     let seriesToUse: { affiliation: string; values: AffVal[] }[];
     if (grouping === 'social') {
@@ -443,8 +771,8 @@ function updateChart() {
       g.select('path.aff-line').datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lg(vals) || '' : '');
       const pts = g.selectAll<SVGCircleElement, AffVal>('circle.aff-point').data(d.values.filter(v => (v.count || 0) > 0), (v: AffVal) => v.dateStr);
       pts.join(
-        enter => enter.append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 3).attr('fill', () => color((d as { affiliation: string }).affiliation)),
-        update => update.attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)),
+        enter => enter.append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation)),
+        update => update.attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0),
         exit => exit.remove()
       );
       const groupAffUpdate = (d as { affiliation: string }).affiliation;
@@ -516,7 +844,7 @@ svg.on('mousemove.nearest', (event) => {
         Rulers: ${classes.ruler}
       `);
     }
-    tooltip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY - 28) + 'px');
+    positionTooltip(event as unknown as MouseEvent, 12, -28);
   } else {
     tooltip.style('display', 'none');
   }

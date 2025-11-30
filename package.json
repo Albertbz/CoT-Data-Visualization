@@ -9,16 +9,22 @@
     "dev": "ts-node src/index.ts",
     "clean": "rm -rf dist node_modules",
     "lint": "eslint --ext .ts src --max-warnings=0",
-    "lint:fix": "eslint --ext .ts src --fix"
+    "lint:fix": "eslint --ext .ts src --fix",
+    "dev:site": "vite site",
+    "build:site": "vite build site",
+    "preview:site": "vite preview site"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
     "@types/node": "^20.5.0",
     "@typescript-eslint/eslint-plugin": "^8.47.0",
     "@typescript-eslint/parser": "^8.47.0",
+    "d3": "^7.9.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "ts-node": "^10.9.1",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "vite": "^7.2.4"
   },
   "dependencies": {
     "@google-cloud/local-auth": "^2.1.0",

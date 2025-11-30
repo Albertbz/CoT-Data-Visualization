@@ -1,6 +1,6 @@
 import { mergeAgeAndHouseData } from './dataprocessing';
-import { getAuthenticatedClient } from './auth';
-import { Auth } from 'googleapis';
+// import { getAuthenticatedClient } from './auth';
+// import { Auth } from 'googleapis';
 import { getPairedFilesByDate, loadDataFromFile, readFilesInDirectory, saveParsedDataToFile } from './filemanagement';
 
 async function main(): Promise<void> {

@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { dateObjects, dates, affiliations, canonicalMembers, affiliationSeries, dataForStack, maxCount, dateGroups, AffVal, socialClasses, socialSeries, dataForStackByClass } from './data';
+import { dates, affiliations, canonicalMembers, affiliationSeries, dataForStack, maxCount, dateGroups, AffVal, socialClasses, socialSeries, dataForStackByClass, gameMonthIndexFor, formatGameMonth, gameIndices } from './data';
 
 // Create SVG container inside the `#visualization` wrapper
 const svg = d3.select('#visualization')
@@ -8,8 +8,11 @@ const svg = d3.select('#visualization')
   .attr('height', 400);
 
 // Scales
-const xScale = d3.scaleTime()
-  .domain([d3.min(dateObjects) as Date, d3.max(dateObjects) as Date])
+// xScale maps game-month indices (numeric) to pixel x positions. Each real
+// day in the data corresponds to one in-game month, and `gameIndices` is
+// precomputed in `data.ts` to match the `dates` array.
+const xScale = d3.scaleLinear()
+  .domain([d3.min(gameIndices) as number, d3.max(gameIndices) as number])
   .range([50, 750]);
 
 const yScale = d3.scaleLinear()
@@ -213,7 +216,27 @@ updateOrderControls();
 // Axes groups
 const xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', 'translate(0,350)');
 const yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', 'translate(50,0)');
-xAxisG.call(d3.axisBottom(xScale));
+// Helper: update x-axis ticks using gameIndices and format with formatGameMonth
+function updateXAxis() {
+  const maxTicks = 12;
+  // Request evenly spaced numeric tick positions from the scale so ticks
+  // appear at equal pixel intervals. These are numeric game-month indices.
+  let tickVals = xScale.ticks(maxTicks);
+  const firstIdx = gameIndices[0];
+  const lastIdx = gameIndices[gameIndices.length - 1];
+  if (tickVals.length === 0) tickVals = [firstIdx, lastIdx];
+  // Ensure first and last are present
+  if (tickVals[0] > firstIdx) tickVals.unshift(firstIdx);
+  if (tickVals[tickVals.length - 1] < lastIdx) tickVals.push(lastIdx);
+  // Normalize to integers for labeling and remove duplicates, then sort
+  tickVals = Array.from(new Set(tickVals.map(v => Math.round(Number(v))))).sort((a, b) => a - b);
+  // Exclude the first and last indices entirely (no tick mark or label)
+  tickVals = tickVals.filter(v => v !== firstIdx && v !== lastIdx);
+  // If filtering removed everything, fall back to a single mid-point tick
+  if (tickVals.length === 0) tickVals = [Math.round((firstIdx + lastIdx) / 2)];
+  xAxisG.call(d3.axisBottom(xScale).tickValues(tickVals).tickFormat((v: d3.NumberValue) => formatGameMonth(Math.round(Number(v)))));
+}
+updateXAxis();
 yAxisG.call(d3.axisLeft(yScale));
 
 // Axis labels
@@ -224,7 +247,7 @@ xAxisG.append('text')
   .attr('fill', 'white')
   .attr('text-anchor', 'middle')
   .attr('font-size', '12px')
-  .text('Date');
+  .text("Date (Mon 'Year)");
 
 yAxisG.append('text')
   .attr('class', 'y-axis-label')
@@ -243,7 +266,7 @@ type StackDatum = { date: Date } & Record<string, number>;
 
 // Area generator
 const areaGen = d3.area<d3.SeriesPoint<StackDatum>>()
-  .x((d: d3.SeriesPoint<StackDatum>) => xScale(d.data.date))
+  .x((d: d3.SeriesPoint<StackDatum>) => xScale(gameMonthIndexFor(d.data.date)))
   .y0((d: d3.SeriesPoint<StackDatum>) => yScale(d[0]))
   .y1((d: d3.SeriesPoint<StackDatum>) => yScale(d[1]));
 
@@ -257,7 +280,7 @@ function drawStackedAreas(activeKeys?: string[]) {
       source = dataForStackByClass as StackDatum[];
     } else {
       source = dates.map(dateStr => {
-        const obj: { date: Date; [k: string]: number | Date } = { date: new Date(dateStr) };
+        const obj: { date: Date;[k: string]: number | Date } = { date: new Date(dateStr) };
         canonicalOrderSocial.forEach(cls => { obj[cls] = socialCountFor(dateStr, cls); });
         return obj as StackDatum;
       });
@@ -269,7 +292,7 @@ function drawStackedAreas(activeKeys?: string[]) {
   // update y domain
   const maxActive = d3.max(source as StackDatum[], d => keys.reduce((s, k) => s + (d[k] || 0), 0)) || 1;
   yScale.domain([0, maxActive]);
-  xAxisG.call(d3.axisBottom(xScale)); yAxisG.call(d3.axisLeft(yScale));
+  updateXAxis(); yAxisG.call(d3.axisLeft(yScale));
 
   svg.selectAll('.area').remove();
   svg.selectAll('.area')
@@ -309,7 +332,7 @@ function drawStackedAreas(activeKeys?: string[]) {
       const bestSeg = series[bestIdx] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
       const date = bestSeg.data.date;
       const vMid = ((bestSeg[0] as number) + (bestSeg[1] as number)) / 2;
-      let x = xScale(date);
+      let x = xScale(gameMonthIndexFor(date));
       let y = yScale(vMid);
       // If the available pixel height is very small, skip the icon
       if (bestHeightPx < ICON_MIN * 0.6) return;
@@ -337,21 +360,22 @@ function drawStackedAreas(activeKeys?: string[]) {
     .on('mousemove', function (event, series) {
       // pointer relative to svg
       const [sx] = d3.pointer(event, svg.node() as SVGElement);
-      const x0 = xScale.invert(sx as number);
-      let i = bisectDate(source as StackDatum[], x0 as Date);
-      if (i > 0 && i < (source as StackDatum[]).length) {
-        const d1 = (source as StackDatum[])[i - 1]; const d2 = (source as StackDatum[])[i];
-        i = (Math.abs(d1.date.getTime() - x0.getTime()) <= Math.abs(d2.date.getTime() - x0.getTime())) ? i - 1 : i;
+      const x0 = xScale.invert(sx as number) as number;
+      let i = bisectIndex(gameIndices, x0);
+      if (i > 0 && i < gameIndices.length) {
+        const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+        i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
       }
       i = Math.max(0, Math.min((source as StackDatum[]).length - 1, i));
-      const row = (source as StackDatum[])[i];
-      const dateStr = row.date.toISOString().split('T')[0];
+      // real date string used for lookups in dateGroups; formatted label for display
+      const dateStr = dates[i];
+      const dateLabel = formatGameMonth(gameIndices[i]);
       const key = series.key;
       if (grouping === 'social') {
         // For social-class grouping, show total + per-affiliation breakdown for this social class on this date
         const breakdown = affiliationCountsForSocial(dateStr, key);
         const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-        tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+        tooltip.style('display', 'block').html(`Date: ${dateLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
       } else {
         // For affiliation grouping, keep the detailed canonical-membership breakdown
         const aff = key;
@@ -371,15 +395,15 @@ function drawStackedAreas(activeKeys?: string[]) {
         const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
 
         tooltip.style('display', 'block').html(`
-          Date: ${dateStr}<br/>
-          <br/>
-          <strong>${aff}</strong><br/>
-          Total: ${totalForAff}<br/>
-          Commoners: ${classes.commoner}<br/>
-          Notables: ${classes.notable}<br/>
-          Nobles: ${classes.noble}<br/>
-          Rulers: ${classes.ruler}
-        `);
+    Date: ${dateLabel}<br/>
+    <br/>
+    <strong>${aff}</strong><br/>
+    Total: ${totalForAff}<br/>
+    Commoners: ${classes.commoner}<br/>
+    Notables: ${classes.notable}<br/>
+    Nobles: ${classes.noble}<br/>
+    Rulers: ${classes.ruler}
+  `);
       }
       // position tooltip near cursor (relative to container)
       positionTooltip(event as unknown as MouseEvent, 12, -28);
@@ -398,7 +422,8 @@ function positionTooltip(event: MouseEvent, offsetX = 12, offsetY = -28) {
   const top = (event.clientY - rect.top) + offsetY;
   tooltip.style('left', left + 'px').style('top', top + 'px');
 }
-const bisectDate = d3.bisector((d: StackDatum) => d.date).left;
+// bisector over numeric game-month indices
+const bisectIndex = d3.bisector((d: number) => d).left;
 
 function updateStackKeys() {
   // Compute a variability metric (population variance) per key and
@@ -596,7 +621,7 @@ function rebuildLegend() {
     const imgPath = LEGEND_IMAGE_PATHS[d];
     // If there is no image, move the text closer to the left edge
     const txtX = imgPath ? TEXT_X : 6;
-    const txt = g.append('text').attr('x', txtX).attr('y', 16).attr('fill', d => colorOf(d)).attr('font-size', '13px').text(String(d));
+    const txt = g.append('text').attr('x', txtX).attr('y', 16).attr('fill', d => colorOf(d as string)).attr('font-size', '13px').text(String(d));
     // measure text and insert backdrop behind it
     try {
       const node = txt.node() as SVGTextElement;
@@ -649,13 +674,13 @@ btnGroupClass?.addEventListener('click', () => { grouping = 'social'; setActiveG
 
 svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height', 300).attr('fill', 'transparent').attr('class', 'chart-overlay')
   .on('mousemove', (event) => {
-    const [mx] = d3.pointer(event);
-    const x0 = xScale.invert(mx);
+    const [mx] = d3.pointer(event, svg.node() as SVGElement);
+    const x0 = xScale.invert(mx) as number;
     let source: StackDatum[];
     if (grouping === 'social') {
       if (includeWanderers) source = dataForStackByClass as StackDatum[];
       else source = dates.map(dateStr => {
-        const obj: { date: Date; [k: string]: number | Date } = { date: new Date(dateStr) };
+        const obj: { date: Date;[k: string]: number | Date } = { date: new Date(dateStr) };
         canonicalOrderSocial.forEach(cls => { obj[cls] = socialCountFor(dateStr, cls); });
         return obj as StackDatum;
       });
@@ -663,17 +688,17 @@ svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height',
       source = dataForStack as StackDatum[];
     }
     const keys = grouping === 'social' ? canonicalOrderSocial : canonicalOrderAffiliations;
-    let i = bisectDate(source as StackDatum[], x0 as Date);
-    if (i > 0 && i < (source as StackDatum[]).length) {
-      const d1 = (source as StackDatum[])[i - 1]; const d2 = (source as StackDatum[])[i];
-      i = (Math.abs(d1.date.getTime() - x0.getTime()) <= Math.abs(d2.date.getTime() - x0.getTime())) ? i - 1 : i;
+    let i = bisectIndex(gameIndices, x0);
+    if (i > 0 && i < gameIndices.length) {
+      const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+      i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
     }
     i = Math.max(0, Math.min((source as StackDatum[]).length - 1, i));
-    const d0 = (source as StackDatum[])[i]; const dateStr = d0.date.toISOString().split('T')[0];
+    const d0 = (source as StackDatum[])[i]; const dateLabel = formatGameMonth(gameIndices[i]);
     const visible = keys.filter(k => (d0[k] || 0) > 0);
     const lines = visible.length ? visible.map(k => `${k}: ${d0[k] || 0}`).join('<br/>') : 'None';
     const total = keys.reduce((s, k) => s + (d0[k] || 0), 0);
-    tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/>Total: ${total}<br/>${lines}`);
+    tooltip.style('display', 'block').html(`Date: ${dateLabel}<br/><br/>Total: ${total}<br/>${lines}`);
     positionTooltip(event as unknown as MouseEvent, 12, -28);
   })
   .on('mouseout', () => tooltip.style('display', 'none'));
@@ -683,7 +708,7 @@ svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height',
 function drawLinesForSeries(seriesArray: { affiliation: string; values: AffVal[] }[]) {
   // remove existing groups then create new ones
   svg.selectAll('g.lines-layer').remove();
-  const lineGen = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(d => xScale(d.date)).y(d => yScale(d.count));
+  const lineGen = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(d => xScale(gameMonthIndexFor(d.date))).y(d => yScale(d.count));
   const groups = svg.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').data(seriesArray).enter().append('g').attr('class', 'lines-layer').style('display', 'none');
   groups.each(function (d) {
     const g = d3.select(this);
@@ -691,9 +716,9 @@ function drawLinesForSeries(seriesArray: { affiliation: string; values: AffVal[]
     g.append('path').attr('class', 'aff-line').attr('fill', 'none').attr('stroke', backdropOf((d as { affiliation: string }).affiliation)).attr('stroke-width', 1.5).datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lineGen(vals) || '' : '');
     const pts = g.selectAll('.aff-point').data(d.values.filter(v => (v.count || 0) > 0));
     // Keep point elements for potential layout/interaction, but make them invisible.
-    pts.enter().append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation));
+    pts.enter().append('circle').attr('class', 'aff-point').attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation));
     const hit = g.selectAll('.aff-hit').data(d.values.filter(v => (v.count || 0) > 0));
-    hit.enter().append('circle').attr('class', 'aff-hit').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 10).attr('fill', 'transparent').style('pointer-events', 'all').attr('data-affiliation', groupAff);
+    hit.enter().append('circle').attr('class', 'aff-hit').attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('r', 10).attr('fill', 'transparent').style('pointer-events', 'all').attr('data-affiliation', groupAff);
   });
 }
 
@@ -704,10 +729,11 @@ function attachHitHandlers() {
       const el = event.currentTarget as HTMLElement;
       const key = el.getAttribute('data-affiliation') || '';
       const dateStr = (pt && pt.dateStr) || '';
+      const gameLabel = dateStr ? formatGameMonth(gameMonthIndexFor(new Date(dateStr))) : '';
       if (grouping === 'social') {
         const breakdown = affiliationCountsForSocial(dateStr, key);
         const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-        tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+        tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
       } else {
         const members = canonicalMembers[key] || [key];
         const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
@@ -722,7 +748,7 @@ function attachHitHandlers() {
           });
         });
         const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
-        tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/><strong>${key}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
+        tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
       }
     })
     .on('mousemove', (event) => positionTooltip(event as unknown as MouseEvent, 10, -28))
@@ -763,23 +789,23 @@ function updateChart() {
 
     const activeSeries = seriesToUse.filter(s => activeAffiliations.has(s.affiliation));
     const maxCountLines = d3.max(activeSeries.flatMap(s => s.values.map(v => v.count))) || 1;
-    yScale.domain([0, maxCountLines]); xAxisG.call(d3.axisBottom(xScale)); yAxisG.call(d3.axisLeft(yScale));
+    yScale.domain([0, maxCountLines]); updateXAxis(); yAxisG.call(d3.axisLeft(yScale));
 
-    const lg = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(v => xScale(v.date)).y(v => yScale(v.count));
+    const lg = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(v => xScale(gameMonthIndexFor(v.date))).y(v => yScale(v.count));
     svg.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').each(function (d) {
       const g = d3.select(this);
       g.select('path.aff-line').datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lg(vals) || '' : '');
       const pts = g.selectAll<SVGCircleElement, AffVal>('circle.aff-point').data(d.values.filter(v => (v.count || 0) > 0), (v: AffVal) => v.dateStr);
       pts.join(
-        enter => enter.append('circle').attr('class', 'aff-point').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation)),
-        update => update.attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0),
+        enter => enter.append('circle').attr('class', 'aff-point').attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0).attr('fill', () => backdropOf((d as { affiliation: string }).affiliation)),
+        update => update.attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('r', 0).attr('opacity', 0),
         exit => exit.remove()
       );
       const groupAffUpdate = (d as { affiliation: string }).affiliation;
       const hits = g.selectAll<SVGCircleElement, AffVal>('circle.aff-hit').data(d.values.filter(v => (v.count || 0) > 0), (v: AffVal) => v.dateStr);
       hits.join(
-        enter => enter.append('circle').attr('class', 'aff-hit').attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('r', 10).attr('fill', 'transparent').style('pointer-events', 'all').attr('data-affiliation', groupAffUpdate),
-        update => update.attr('cx', v => xScale(v.date)).attr('cy', v => yScale(v.count)).attr('data-affiliation', groupAffUpdate),
+        enter => enter.append('circle').attr('class', 'aff-hit').attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('r', 10).attr('fill', 'transparent').style('pointer-events', 'all').attr('data-affiliation', groupAffUpdate),
+        update => update.attr('cx', v => xScale(gameMonthIndexFor(v.date))).attr('cy', v => yScale(v.count)).attr('data-affiliation', groupAffUpdate),
         exit => exit.remove()
       );
     });
@@ -805,7 +831,7 @@ svg.on('mousemove.nearest', (event) => {
     if (!activeAffiliations.has(s.affiliation)) return;
     s.values.forEach(v => {
       if (!v || (v.count || 0) <= 0) return;
-      const dx = xScale(v.date) - mx;
+      const dx = xScale(gameMonthIndexFor(v.date)) - mx;
       const dy = yScale(v.count) - my;
       const d2 = dx * dx + dy * dy;
       if (d2 < best.dist2) best = { series: s.affiliation, val: v, dist2: d2 };
@@ -815,10 +841,11 @@ svg.on('mousemove.nearest', (event) => {
   if (best.val && Math.sqrt(best.dist2) <= hitRadius) {
     const aff = best.series || '';
     const dateStr = best.val!.dateStr;
+    const gameLabel = dateStr ? formatGameMonth(gameMonthIndexFor(new Date(dateStr))) : '';
     if (grouping === 'social') {
       const breakdown = affiliationCountsForSocial(dateStr, aff);
       const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-      tooltip.style('display', 'block').html(`Date: ${dateStr}<br/><br/><strong>${aff}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+      tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${aff}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
     } else {
       const members = canonicalMembers[aff] || [aff];
       const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
@@ -834,7 +861,7 @@ svg.on('mousemove.nearest', (event) => {
       });
       const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
       tooltip.style('display', 'block').html(`
-        Date: ${dateStr}<br/>
+        Date: ${gameLabel}<br/>
         <br/>
         <strong>${aff}</strong><br/>
         Total: ${totalForAff}<br/>

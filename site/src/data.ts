@@ -62,6 +62,61 @@ dataList.forEach(d => {
 export const dates = Object.keys(dateGroups).sort();
 export const dateObjects = dates.map(d => new Date(d));
 
+// --- Game month mapping ---
+// Real-world anchor: a real date maps to a specific in-game year/month.
+// By convention: real `2025-04-19` => in-game Year 5, May (month 5).
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const BASE_REAL_DATE = new Date('2025-04-19');
+const BASE_GAME_YEAR = 5;
+const BASE_GAME_MONTH = 5; // May
+
+// Server restart behavior: every 6 hours there's a ~6 minute restart during
+// which the in-game calendar is paused. That yields 4 restarts/day * 6min = 24min/day
+// of paused time. We account for these pauses when converting real time -> in-game months.
+const RESTARTS_PER_DAY = 4;
+const RESTART_MINUTES = 6;
+const PAUSE_MINUTES_PER_DAY = RESTARTS_PER_DAY * RESTART_MINUTES; // 24
+const MINUTES_PER_DAY = 24 * 60;
+const ACTIVE_MINUTES_PER_DAY = MINUTES_PER_DAY - PAUSE_MINUTES_PER_DAY; // 1416
+
+function daysBetweenUTC(a: Date, b: Date) {
+  // Normalize to UTC midnight to avoid timezone issues
+  const utcA = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
+  const utcB = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+  return Math.round((utcA - utcB) / MS_PER_DAY);
+}
+
+// Returns an integer month-index where months are numbered so that
+// BASE_GAME_YEAR/BASE_GAME_MONTH corresponds to the index computed here.
+// Takes server restarts into account: the in-game calendar does not advance
+// during restart windows, so effective active time per real day is slightly
+// less than 24 hours.
+export function gameMonthIndexFor(real: Date) {
+  const deltaDays = daysBetweenUTC(real, BASE_REAL_DATE);
+  const baseIndex = BASE_GAME_YEAR * 12 + (BASE_GAME_MONTH - 1);
+  // Compute effective number of active minutes between the two dates
+  // (using whole-day granularity consistent with the rest of the code).
+  const activeMinutes = deltaDays * ACTIVE_MINUTES_PER_DAY;
+  // Convert active minutes into in-game months (1 month == 24*60 active minutes)
+  // Use rounding so mapping is symmetric for past/future dates and preserves
+  // the anchor mapping for the base date.
+  const monthsDelta = Math.round(activeMinutes / MINUTES_PER_DAY);
+  return baseIndex + monthsDelta;
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function formatGameMonth(index: number) {
+  const y = Math.floor(index / 12);
+  const m = (index % 12 + 12) % 12; // ensure positive modulo
+  // Format as "Mon 'Year" e.g. "Oct '4"
+  return `${MONTH_NAMES[m]} '${y}`;
+}
+
+// Precompute game indices corresponding to the `dates` array (same ordering)
+export const gameIndices = dates.map(d => gameMonthIndexFor(new Date(d)));
+export const dateStrToGameIndex: Record<string, number> = {};
+dates.forEach((d, i) => { dateStrToGameIndex[d] = gameIndices[i]; });
+
 // List of all raw affiliations (exclude falsy/empty and 'Unknown')
 export const rawAffiliations = Array.from(new Set(dataList.map(d => d['Affiliation'] as string))).filter(a => !!a && a.trim() !== '' && a !== 'Unknown');
 

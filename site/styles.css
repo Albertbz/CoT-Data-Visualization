@@ -36,6 +36,8 @@ svg {
 #visualization {
   border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 10px;
+  /* add extra bottom padding so controls can sit below the chart */
+  padding-bottom: 28px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.01);
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);

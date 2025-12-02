@@ -183,32 +183,132 @@ function updateOrderControls() {
   let ctrl = document.getElementById('order-control') as HTMLDivElement | null;
   // Lazily create the control only when needed (like the wanderer button)
   if (!ctrl && grouping === 'affiliation' && chartType === 'stacked') {
-    // build it
+    // Build a compact control: show only the selected method and an
+    // expand arrow. Hidden methods are revealed when the expand button
+    // is clicked. Selecting a hidden method collapses back to the
+    // single-button view.
     const created = document.createElement('div');
     created.id = 'order-control';
     created.className = 'order-control';
+
+    // Selected (visible) button showing current method label
+    const selBtn = document.createElement('button');
+    selBtn.id = 'order-selected';
+    selBtn.className = 'chart-btn';
+    const findLabel = ORDER_METHODS.find(x => x.id === orderMethod)?.label || ORDER_METHODS[0].label;
+    selBtn.textContent = findLabel;
+    selBtn.title = 'Current ordering';
+    // mark compact selected button active initially
+    selBtn.classList.toggle('active', true);
+
+    // Expand/collapse button (arrow)
+    const expandBtn = document.createElement('button');
+    expandBtn.id = 'order-expand';
+    expandBtn.className = 'chart-btn';
+    expandBtn.textContent = '▸';
+    expandBtn.title = 'Show ordering options';
+
+    // Container for the full set of method buttons (hidden by default)
+    const hiddenWrap = document.createElement('div');
+    hiddenWrap.id = 'order-hidden-wrap';
+    hiddenWrap.style.display = 'none';
+    hiddenWrap.style.gap = '6px';
+    hiddenWrap.style.alignItems = 'center';
+
+    // Helper to collapse the hidden buttons back into compact view
+    const collapseHidden = () => {
+      hiddenWrap.style.display = 'none';
+      // move expand button back to its compact position (after selected)
+      try { created.insertBefore(expandBtn, hiddenWrap); } catch { }
+      expandBtn.textContent = '▸';
+      expandBtn.style.marginLeft = '';
+      // show and visually mark the compact selected button
+      selBtn.style.display = 'inline-block';
+      selBtn.classList.add('active');
+      selBtn.textContent = ORDER_METHODS.find(x => x.id === orderMethod)?.label || '';
+      // ensure hidden buttons update active state too (keep consistent)
+      hiddenWrap.querySelectorAll('button').forEach((b: Element) => {
+        const btn = b as HTMLButtonElement;
+        if (btn.dataset && btn.dataset['method']) btn.classList.toggle('active', btn.dataset['method'] === orderMethod);
+      });
+    };
+
+    // Helper to expand: hide the selected label and show the full list.
+    // Keep the arrow on the right but show a left-pointing glyph.
+    const expandHidden = () => {
+      hiddenWrap.style.display = 'flex';
+      // hide the compact selected button
+      selBtn.style.display = 'none';
+      // move expand button into the hidden wrapper at the end and push it to the right
+      try { hiddenWrap.appendChild(expandBtn); expandBtn.style.marginLeft = 'auto'; } catch { }
+      expandBtn.textContent = '◂';
+      // Update hidden buttons so the current selection is visually active
+      hiddenWrap.querySelectorAll('button').forEach((b: Element) => {
+        const btn = b as HTMLButtonElement;
+        if (btn.dataset && btn.dataset['method']) btn.classList.toggle('active', btn.dataset['method'] === orderMethod);
+      });
+    };
+
+    // Build hidden buttons for all methods
     ORDER_METHODS.forEach(m => {
       const btn = document.createElement('button');
       btn.className = 'chart-btn';
       btn.textContent = m.label;
       btn.dataset['method'] = m.id;
+      // mark active visually
       if (m.id === orderMethod) btn.classList.add('active');
       btn.addEventListener('click', () => {
+        // select this method, collapse others
         orderMethod = m.id;
-        created.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        // update visuals
+        hiddenWrap.querySelectorAll('button').forEach((b: Element) => b.classList.remove('active'));
         btn.classList.add('active');
         saveState();
         updateStackKeys();
         updateChart();
+        collapseHidden();
       });
-      created.appendChild(btn);
+      hiddenWrap.appendChild(btn);
     });
+
+    // Clicking the expand button toggles hidden buttons (works both when
+    // it's in compact position or moved into the hiddenWrap).
+    expandBtn.addEventListener('click', () => {
+      if (hiddenWrap.style.display === 'none' || hiddenWrap.style.display === '') expandHidden();
+      else collapseHidden();
+    });
+
+    // Clicking the selected button will also toggle expansion
+    selBtn.addEventListener('click', () => {
+      if (hiddenWrap.style.display === 'none' || hiddenWrap.style.display === '') expandHidden();
+      else collapseHidden();
+    });
+
+    created.appendChild(selBtn);
+    created.appendChild(expandBtn);
+    created.appendChild(hiddenWrap);
     container.appendChild(created);
     ctrl = created;
   }
   // If control exists, show/hide depending on context
   if (ctrl) {
     ctrl.style.display = (grouping === 'affiliation' && chartType === 'stacked') ? 'inline-block' : 'none';
+    // Ensure the hidden-wrap (if present) is collapsed by default when the control is shown.
+    const hw = document.getElementById('order-hidden-wrap') as HTMLDivElement | null;
+    const sel = document.getElementById('order-selected') as HTMLButtonElement | null;
+    const ex = document.getElementById('order-expand') as HTMLButtonElement | null;
+    if (hw) hw.style.display = 'none';
+    if (sel) {
+      sel.style.display = 'inline-block';
+      sel.classList.toggle('active', true);
+    }
+    // If the expand button ended up inside hw (from a previous expanded state),
+    // move it back to the compact position (before hw) and reset spacing.
+    if (ex) {
+      try { ctrl.insertBefore(ex, hw); } catch { }
+      ex.style.marginLeft = '';
+      ex.textContent = '▸';
+    }
   }
 }
 updateOrderControls();
@@ -289,13 +389,22 @@ function drawStackedAreas(activeKeys?: string[]) {
     source = dataForStack as StackDatum[];
   }
   const stackedData = stackLayout(source as StackDatum[]);
-  // update y domain
-  const maxActive = d3.max(source as StackDatum[], d => keys.reduce((s, k) => s + (d[k] || 0), 0)) || 1;
+  // update y domain — compute maximum only over rows that fall inside the
+  // current x-scale domain so the vertical scale fits the visible selection.
+  const dom = xScale.domain();
+  const domMin = Math.min(Number(dom[0]), Number(dom[1]));
+  const domMax = Math.max(Number(dom[0]), Number(dom[1]));
+  const rows = (source as StackDatum[]).filter(r => {
+    const idx = gameMonthIndexFor(r.date);
+    return idx >= domMin && idx <= domMax;
+  });
+  const rowsToCheck = rows.length ? rows : (source as StackDatum[]);
+  const maxActive = d3.max(rowsToCheck, d => keys.reduce((s, k) => s + (d[k] || 0), 0)) || 1;
   yScale.domain([0, maxActive]);
   updateXAxis(); yAxisG.call(d3.axisLeft(yScale));
 
-  svg.selectAll('.area').remove();
-  svg.selectAll('.area')
+  plot.selectAll('.area').remove();
+  plot.selectAll('.area')
     .data(stackedData)
     .enter()
     .append('path')
@@ -307,43 +416,97 @@ function drawStackedAreas(activeKeys?: string[]) {
 
   // Add affiliation icons onto the stacked areas (if available).
   // Remove any previous icons first.
-  svg.selectAll('image.area-icon').remove();
+  plot.selectAll('image.area-icon').remove();
   if (grouping === 'affiliation') {
     const ICON_MAX = 28; const ICON_MIN = 10;
     (stackedData as d3.Series<StackDatum, string>[]).forEach(series => {
       const key = series.key;
       const imgPath = LEGEND_IMAGE_PATHS[key];
       if (!imgPath) return; // only add icon when we have an image
-      // Find the index with the largest available pixel height for this series
-      let bestIdx = -1;
-      let bestHeightPx = -Infinity;
+      // Consider only indices that fall within the current xScale domain
+      const [domainMin, domainMax] = xScale.domain();
+      const candidates: number[] = [];
       for (let i = 0; i < series.length; i++) {
+        const gameIdx = gameIndices[i];
+        // Exclude points exactly on the domain edges so icons are not placed
+        // with their centers at the very left/right clipping boundary.
+        if (gameIdx > domainMin && gameIdx < domainMax) candidates.push(i);
+      }
+
+      let chosenIdx = -1;
+      let chosenHeightPx = -Infinity;
+
+      // Helper to compute pixel height at index
+      const heightPxAt = (i: number) => {
         const seg = series[i] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
         const v0 = seg[0] as number; const v1 = seg[1] as number;
-        const heightVal = v1 - v0;
-        if (!(heightVal > 0)) continue; // skip zero-height segments
-        // compute pixel height of the band at this index
-        const topPx = yScale(v1);
-        const botPx = yScale(v0);
-        const heightPx = Math.abs(botPx - topPx);
-        if (heightPx > bestHeightPx) { bestHeightPx = heightPx; bestIdx = i; }
+        if (!(v1 - v0 > 0)) return -Infinity;
+        return Math.abs(yScale(v0) - yScale(v1));
+      };
+
+      if (candidates.length > 0) {
+        // choose the candidate index with largest pixel height
+        candidates.forEach(i => {
+          const h = heightPxAt(i);
+          if (h > chosenHeightPx) { chosenHeightPx = h; chosenIdx = i; }
+        });
+      } else {
+        // No discrete sample falls inside domain. Interpolate at domain midpoint.
+        const midIdx = (domainMin + domainMax) / 2;
+        // find neighboring indices for interpolation
+        let j = bisectIndex(gameIndices, midIdx);
+        if (j > 0) j = j - 1; // ensure j is lower neighbor
+        if (j < 0) j = 0;
+        if (j >= series.length - 1) j = series.length - 2;
+        const segA = series[j] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
+        const segB = series[j + 1] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
+        const gA = gameIndices[j]; const gB = gameIndices[j + 1];
+        const t = (gB === gA) ? 0 : ((midIdx - gA) / (gB - gA));
+        const v0Mid = (segA[0] as number) + t * ((segB[0] as number) - (segA[0] as number));
+        const v1Mid = (segA[1] as number) + t * ((segB[1] as number) - (segA[1] as number));
+        const heightMid = v1Mid - v0Mid;
+        chosenHeightPx = Math.abs(yScale(v0Mid) - yScale(v1Mid));
+        // We'll position at the midpoint (fractional game index) rather than a discrete sample
+        chosenIdx = -1; // mark as interpolated
+        // only show if there's meaningful height
+        if (!(heightMid > 0)) return;
+        // compute position using interpolated values
+        let x = xScale(midIdx);
+        const y = yScale((v0Mid + v1Mid) / 2);
+        const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(chosenHeightPx * 0.7)));
+        // ensure icon center stays away from clipping edges by iconSize/2
+        const leftBound = 50 + iconSize / 2;
+        const rightBound = 750 - iconSize / 2;
+        x = Math.max(leftBound, Math.min(rightBound, x));
+        plot.append('image')
+          .attr('class', 'area-icon')
+          .attr('href', imgPath)
+          .attr('width', iconSize)
+          .attr('height', iconSize)
+          .attr('x', x - iconSize / 2)
+          .attr('y', y - iconSize / 2)
+          .attr('opacity', 0.95)
+          .style('pointer-events', 'none');
+        return;
       }
-      if (bestIdx < 0) return;
-      const bestSeg = series[bestIdx] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
-      const date = bestSeg.data.date;
+
+      if (chosenIdx < 0) return;
+      const bestSeg = series[chosenIdx] as unknown as d3.SeriesPoint<StackDatum> & [number, number];
       const vMid = ((bestSeg[0] as number) + (bestSeg[1] as number)) / 2;
-      let x = xScale(gameMonthIndexFor(date));
+      let x = xScale(gameIndices[chosenIdx]);
       let y = yScale(vMid);
       // If the available pixel height is very small, skip the icon
-      if (bestHeightPx < ICON_MIN * 0.6) return;
+      if (chosenHeightPx < ICON_MIN * 0.6) return;
       // compute icon size based on available height, clamped between ICON_MIN and ICON_MAX
-      const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(bestHeightPx * 0.7)));
-      // clamp to chart area padding (50..750 x, 50..350 y)
-      const minX = 50 + iconSize / 2; const maxX = 750 - iconSize / 2;
-      const minY = 50 + iconSize / 2; const maxY = 350 - iconSize / 2;
-      x = Math.max(minX, Math.min(maxX, x));
-      y = Math.max(minY, Math.min(maxY, y));
-      svg.append('image')
+      const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(chosenHeightPx * 0.7)));
+      // clamp vertically and horizontally so icon centers are fully inside
+      const leftBound = 50 + iconSize / 2;
+      const rightBound = 750 - iconSize / 2;
+      const topBound = 50 + iconSize / 2;
+      const bottomBound = 350 - iconSize / 2;
+      x = Math.max(leftBound, Math.min(rightBound, x));
+      y = Math.max(topBound, Math.min(bottomBound, y));
+      plot.append('image')
         .attr('class', 'area-icon')
         .attr('href', imgPath)
         .attr('width', iconSize)
@@ -356,7 +519,7 @@ function drawStackedAreas(activeKeys?: string[]) {
   }
 
   // Add hover handlers to show affiliation + social-class breakdown for the hovered date
-  svg.selectAll<SVGPathElement, d3.Series<StackDatum, string>>('.area')
+  plot.selectAll<SVGPathElement, d3.Series<StackDatum, string>>('.area')
     .on('mousemove', function (event, series) {
       // pointer relative to svg
       const [sx] = d3.pointer(event, svg.node() as SVGElement);
@@ -619,7 +782,10 @@ function rebuildLegend() {
   legendItems.each(function (d) {
     const g = d3.select(this);
     const imgPath = LEGEND_IMAGE_PATHS[d];
-    // If there is no image, move the text closer to the left edge
+    // If there is no image, move the text closer to the left edge and also
+    // adjust the item spacing accordingly.
+    const itemSpacing = imgPath ? ITEM_SPACING : 20;
+    g.attr('transform', `translate(${legendX}, ${legendY + legendItems.nodes().indexOf(this) * itemSpacing})`);
     const txtX = imgPath ? TEXT_X : 6;
     const txt = g.append('text').attr('x', txtX).attr('y', 16).attr('fill', d => colorOf(d as string)).attr('font-size', '13px').text(String(d));
     // measure text and insert backdrop behind it
@@ -703,13 +869,68 @@ svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height',
   })
   .on('mouseout', () => tooltip.style('display', 'none'));
 
+// --- Horizontal brushing: allow selecting an x-range and zooming the x-axis ---
+// Create a clip path so the brush visuals are constrained to the plotting area
+// and cannot draw over the y-axis or legend areas.
+svg.append('defs').append('clipPath').attr('id', 'clip-chart').append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height', 300);
+
+// Create a plotting group that is clipped to the chart area so all
+// drawn series and icons stay within the intended rectangle.
+const plot = svg.append('g').attr('class', 'plot').attr('clip-path', 'url(#clip-chart)');
+
+// The brush covers the entire plotting area so selections fill the chart height.
+const brush = d3.brushX()
+  .extent([[50, 50], [750, 350]])
+  .on('start', () => { try { plot.lower(); } catch { } try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'all'); } catch { } })
+  .on('end', (event: d3.D3BrushEvent<unknown>) => {
+    const selection = event.selection;
+    // If the user cleared selection (or the brush was programmatically cleared),
+    // ensure the plot is restored and the brush overlay stops intercepting pointer events.
+    if (!selection) {
+      try { plot.raise(); } catch { }
+      try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'none'); } catch { }
+      return; // user cleared selection
+    }
+    const [x0, x1] = selection;
+    // Map pixel coordinates back to game-month index values and snap to integers
+    let i0 = Math.round(xScale.invert(x0));
+    let i1 = Math.round(xScale.invert(x1));
+    if (i0 === i1) i1 = i0 + 1; // ensure a non-zero range
+    const newMin = Math.min(i0, i1);
+    const newMax = Math.max(i0, i1);
+    xScale.domain([newMin, newMax]);
+    updateXAxis();
+    drawStackedAreas();
+    updateChart();
+    // Clear the visible brush selection so it doesn't remain on-screen
+    brushG.call(brush.move, null);
+    try { plot.raise(); } catch { }
+    try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'none'); } catch { }
+  });
+
+const brushG = svg.append('g').attr('class', 'x-brush').attr('clip-path', 'url(#clip-chart)').call(brush);
+// When not actively brushing, let pointer events pass through so underlying
+// overlays (tooltips / nearest-point handlers) receive mouse events.
+try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'none'); } catch { }
+
+// Double-click anywhere on the SVG resets the x-axis to the full domain
+svg.on('dblclick.reset-x', () => {
+  xScale.domain([d3.min(gameIndices) as number, d3.max(gameIndices) as number]);
+  updateXAxis();
+  drawStackedAreas();
+  updateChart();
+  brushG.call(brush.move, null);
+  try { plot.raise(); } catch { }
+  try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'none'); } catch { }
+});
+
 
 // Draw lines for a given series (either affiliationSeries or socialSeries)
 function drawLinesForSeries(seriesArray: { affiliation: string; values: AffVal[] }[]) {
   // remove existing groups then create new ones
-  svg.selectAll('g.lines-layer').remove();
+  plot.selectAll('g.lines-layer').remove();
   const lineGen = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(d => xScale(gameMonthIndexFor(d.date))).y(d => yScale(d.count));
-  const groups = svg.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').data(seriesArray).enter().append('g').attr('class', 'lines-layer').style('display', 'none');
+  const groups = plot.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').data(seriesArray).enter().append('g').attr('class', 'lines-layer').style('display', 'none');
   groups.each(function (d) {
     const g = d3.select(this);
     const groupAff = (d as { affiliation: string }).affiliation;
@@ -723,7 +944,7 @@ function drawLinesForSeries(seriesArray: { affiliation: string; values: AffVal[]
 }
 
 function attachHitHandlers() {
-  svg.selectAll('.aff-hit')
+  plot.selectAll('.aff-hit')
     .on('mouseover', (event, d) => {
       const pt = d as AffVal;
       const el = event.currentTarget as HTMLElement;
@@ -766,7 +987,7 @@ function updateChart() {
     drawStackedAreas(activeKeys);
     svg.selectAll('.chart-overlay').style('display', null);
     // remove any existing line groups
-    svg.selectAll('g.lines-layer').remove();
+    plot.selectAll('g.lines-layer').remove();
     // ensure any area icons are present (drawStackedAreas handles creation)
     // nothing to do here
   } else {
@@ -785,14 +1006,21 @@ function updateChart() {
       seriesToUse = affiliationSeries;
     }
     drawLinesForSeries(seriesToUse);
-    svg.selectAll<SVGGElement, { affiliation: string }>('g.lines-layer').style('display', d => activeAffiliations.has(d.affiliation) ? null : 'none');
+    plot.selectAll<SVGGElement, { affiliation: string }>('g.lines-layer').style('display', d => activeAffiliations.has(d.affiliation) ? null : 'none');
 
     const activeSeries = seriesToUse.filter(s => activeAffiliations.has(s.affiliation));
-    const maxCountLines = d3.max(activeSeries.flatMap(s => s.values.map(v => v.count))) || 1;
+    // compute max only over values whose game index lies inside current x domain
+    const dom = xScale.domain();
+    const domMin = Math.min(Number(dom[0]), Number(dom[1]));
+    const domMax = Math.max(Number(dom[0]), Number(dom[1]));
+    const maxCountLines = d3.max(activeSeries.flatMap(s => s.values.filter(v => {
+      const gi = gameMonthIndexFor(v.date);
+      return gi >= domMin && gi <= domMax;
+    }).map(v => v.count))) || 1;
     yScale.domain([0, maxCountLines]); updateXAxis(); yAxisG.call(d3.axisLeft(yScale));
 
     const lg = d3.line<AffVal>().defined(v => (v.count || 0) > 0).x(v => xScale(gameMonthIndexFor(v.date))).y(v => yScale(v.count));
-    svg.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').each(function (d) {
+    plot.selectAll<SVGGElement, { affiliation: string; values: AffVal[] }>('g.lines-layer').each(function (d) {
       const g = d3.select(this);
       g.select('path.aff-line').datum(d.values).attr('d', (vals: AffVal[] | undefined) => vals ? lg(vals) || '' : '');
       const pts = g.selectAll<SVGCircleElement, AffVal>('circle.aff-point').data(d.values.filter(v => (v.count || 0) > 0), (v: AffVal) => v.dateStr);
@@ -880,5 +1108,6 @@ svg.on('mousemove.nearest', (event) => {
 // Initial render
 drawStackedAreas();
 updateChart();
+try { plot.raise(); } catch { }
 
 console.log('Visualization created.');

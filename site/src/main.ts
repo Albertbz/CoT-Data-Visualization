@@ -1,11 +1,33 @@
 import * as d3 from 'd3';
 import { dates, affiliations, canonicalMembers, affiliationSeries, dataForStack, maxCount, dateGroups, AffVal, socialClasses, socialSeries, dataForStackByClass, gameMonthIndexFor, formatGameMonth, gameIndices } from './data';
 
+// Layout constants (centralized) — keep these values unchanged for now.
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 550;
+const MARGIN_TOP = 50;
+const MARGIN_LEFT = 50;
+const MARGIN_RIGHT = 50;
+const MARGIN_BOTTOM = 50;
+
+const PLOT_LEFT = MARGIN_LEFT;
+const PLOT_TOP = MARGIN_TOP;
+const PLOT_WIDTH = CANVAS_WIDTH - MARGIN_LEFT - MARGIN_RIGHT; // 700
+const PLOT_HEIGHT = CANVAS_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM; // 300
+const PLOT_RIGHT = PLOT_LEFT + PLOT_WIDTH; // 750
+const PLOT_BOTTOM = PLOT_TOP + PLOT_HEIGHT; // 350
+
 // Create SVG container inside the `#visualization` wrapper
 const svg = d3.select('#visualization')
   .append('svg')
-  .attr('width', 800)
-  .attr('height', 400);
+  .attr('width', CANVAS_WIDTH)
+  .attr('height', CANVAS_HEIGHT);
+
+// Export a CSS custom property so styles can reference the canvas height
+// (e.g. presentation height = internal canvas height + 20px). This allows
+// CSS to use the computed value without hard-coding it in the stylesheet.
+try {
+  document.documentElement.style.setProperty('--canvas-height', `${CANVAS_HEIGHT + 20}px`);
+} catch { }
 
 // Scales
 // xScale maps game-month indices (numeric) to pixel x positions. Each real
@@ -13,11 +35,11 @@ const svg = d3.select('#visualization')
 // precomputed in `data.ts` to match the `dates` array.
 const xScale = d3.scaleLinear()
   .domain([d3.min(gameIndices) as number, d3.max(gameIndices) as number])
-  .range([50, 750]);
+  .range([PLOT_LEFT, PLOT_RIGHT]);
 
 const yScale = d3.scaleLinear()
   .domain([0, maxCount])
-  .range([350, 50]);
+  .range([PLOT_BOTTOM, PLOT_TOP]);
 
 // Color scale (domain set dynamically per grouping)
 const color = d3.scaleOrdinal<string, string>().range((d3.schemeCategory10 as readonly string[]).slice(0, 10));
@@ -314,8 +336,8 @@ function updateOrderControls() {
 updateOrderControls();
 
 // Axes groups
-const xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', 'translate(0,350)');
-const yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', 'translate(50,0)');
+const xAxisG = svg.append('g').attr('class', 'x-axis').attr('transform', `translate(0, ${PLOT_BOTTOM})`);
+const yAxisG = svg.append('g').attr('class', 'y-axis').attr('transform', `translate(${PLOT_LEFT},0)`);
 // Helper: update x-axis ticks using gameIndices and format with formatGameMonth
 function updateXAxis() {
   const maxTicks = 12;
@@ -342,7 +364,7 @@ yAxisG.call(d3.axisLeft(yScale));
 // Axis labels
 xAxisG.append('text')
   .attr('class', 'x-axis-label')
-  .attr('x', 400)
+  .attr('x', CANVAS_WIDTH / 2)
   .attr('y', 45)
   .attr('fill', 'white')
   .attr('text-anchor', 'middle')
@@ -475,8 +497,8 @@ function drawStackedAreas(activeKeys?: string[]) {
         const y = yScale((v0Mid + v1Mid) / 2);
         const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(chosenHeightPx * 0.7)));
         // ensure icon center stays away from clipping edges by iconSize/2
-        const leftBound = 50 + iconSize / 2;
-        const rightBound = 750 - iconSize / 2;
+        const leftBound = PLOT_LEFT + iconSize / 2;
+        const rightBound = PLOT_RIGHT - iconSize / 2;
         x = Math.max(leftBound, Math.min(rightBound, x));
         plot.append('image')
           .attr('class', 'area-icon')
@@ -500,10 +522,10 @@ function drawStackedAreas(activeKeys?: string[]) {
       // compute icon size based on available height, clamped between ICON_MIN and ICON_MAX
       const iconSize = Math.min(ICON_MAX, Math.max(ICON_MIN, Math.floor(chosenHeightPx * 0.7)));
       // clamp vertically and horizontally so icon centers are fully inside
-      const leftBound = 50 + iconSize / 2;
-      const rightBound = 750 - iconSize / 2;
-      const topBound = 50 + iconSize / 2;
-      const bottomBound = 350 - iconSize / 2;
+      const leftBound = PLOT_LEFT + iconSize / 2;
+      const rightBound = PLOT_RIGHT - iconSize / 2;
+      const topBound = PLOT_TOP + iconSize / 2;
+      const bottomBound = PLOT_BOTTOM - iconSize / 2;
       x = Math.max(leftBound, Math.min(rightBound, x));
       y = Math.max(topBound, Math.min(bottomBound, y));
       plot.append('image')
@@ -784,7 +806,7 @@ function rebuildLegend() {
     const imgPath = LEGEND_IMAGE_PATHS[d];
     // If there is no image, move the text closer to the left edge and also
     // adjust the item spacing accordingly.
-    const itemSpacing = imgPath ? ITEM_SPACING : 20;
+    const itemSpacing = imgPath ? ITEM_SPACING : 25;
     g.attr('transform', `translate(${legendX}, ${legendY + legendItems.nodes().indexOf(this) * itemSpacing})`);
     const txtX = imgPath ? TEXT_X : 6;
     const txt = g.append('text').attr('x', txtX).attr('y', 16).attr('fill', d => colorOf(d as string)).attr('font-size', '13px').text(String(d));
@@ -827,7 +849,7 @@ function updateLegend() {
   svg.selectAll<SVGGElement, string>('g.legend-item').select('rect').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
   svg.selectAll<SVGGElement, string>('g.legend-item').select('image').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
   svg.selectAll<SVGGElement, string>('g.legend-item').select('rect.legend-backdrop').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
-  svg.selectAll<SVGTextElement, string>('g.legend-item').select('text').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.8);
+  svg.selectAll<SVGTextElement, string>('g.legend-item').select('text').attr('opacity', d => activeAffiliations.has(d) ? 1 : 0.2);
 }
 
 rebuildLegend();
@@ -838,7 +860,7 @@ btnLines?.addEventListener('click', () => { chartType = 'lines'; setActiveChartB
 btnGroupAff?.addEventListener('click', () => { grouping = 'affiliation'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); updateOrderControls(); saveState(); });
 btnGroupClass?.addEventListener('click', () => { grouping = 'social'; setActiveGroupButton(); updateStackKeys(); rebuildLegend(); updateChart(); updateOrderControls(); saveState(); });
 
-svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height', 300).attr('fill', 'transparent').attr('class', 'chart-overlay')
+svg.append('rect').attr('x', PLOT_LEFT).attr('y', PLOT_TOP).attr('width', PLOT_WIDTH).attr('height', PLOT_HEIGHT).attr('fill', 'transparent').attr('class', 'chart-overlay')
   .on('mousemove', (event) => {
     const [mx] = d3.pointer(event, svg.node() as SVGElement);
     const x0 = xScale.invert(mx) as number;
@@ -872,7 +894,7 @@ svg.append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height',
 // --- Horizontal brushing: allow selecting an x-range and zooming the x-axis ---
 // Create a clip path so the brush visuals are constrained to the plotting area
 // and cannot draw over the y-axis or legend areas.
-svg.append('defs').append('clipPath').attr('id', 'clip-chart').append('rect').attr('x', 50).attr('y', 50).attr('width', 700).attr('height', 300);
+svg.append('defs').append('clipPath').attr('id', 'clip-chart').append('rect').attr('x', PLOT_LEFT).attr('y', PLOT_TOP).attr('width', PLOT_WIDTH).attr('height', PLOT_HEIGHT);
 
 // Create a plotting group that is clipped to the chart area so all
 // drawn series and icons stay within the intended rectangle.
@@ -880,7 +902,7 @@ const plot = svg.append('g').attr('class', 'plot').attr('clip-path', 'url(#clip-
 
 // The brush covers the entire plotting area so selections fill the chart height.
 const brush = d3.brushX()
-  .extent([[50, 50], [750, 350]])
+  .extent([[PLOT_LEFT, PLOT_TOP], [PLOT_RIGHT, PLOT_BOTTOM]])
   .on('start', () => { try { plot.lower(); } catch { } try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'all'); } catch { } })
   .on('end', (event: d3.D3BrushEvent<unknown>) => {
     const selection = event.selection;

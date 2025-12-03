@@ -22,7 +22,8 @@ body {
 /* make svg responsive */
 svg {
   width: 100%;
-  height: 420px;
+  /* presentation height derived from JS: fallback to 400px */
+  height: var(--canvas-height, 400px);
   display: block
 }
 

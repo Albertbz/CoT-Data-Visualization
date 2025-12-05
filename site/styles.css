@@ -47,6 +47,13 @@ svg {
   margin: auto
 }
 
+/* Center the main header in the app container */
+#app>h1 {
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
 /* Shared chart card styling for overview and comparison charts */
 .chart-card {
   border: 1px solid rgba(255, 255, 255, 0.06);

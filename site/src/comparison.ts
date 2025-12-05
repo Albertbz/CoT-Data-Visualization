@@ -1,7 +1,7 @@
 import * as d3 from 'd3';
 import { dates, affiliations, canonicalMembers, dateGroups, gameIndices, formatGameMonth, DataEntry } from './data';
 import { PLOT_WIDTH, PLOT_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT, MARGIN_LEFT, MARGIN_TOP, MARGIN_BOTTOM } from './canvassetup';
-import { backdropOf, colorOf } from './shared';
+import { backdropOf, colorOf, LEGEND_IMAGE_PATHS } from './shared';
 
 export function initComparison() {
   const vizContainer = document.getElementById('overview-chart');
@@ -351,6 +351,34 @@ export function initComparison() {
         .attr('height', v => compH - yLin(v.count))
         .attr('fill', v => backdropOf(v.affiliation));
       rects.exit().remove();
+
+      // Affiliation icons on top of bars (if available)
+      try {
+        const iconsData = d.values.map(v => v).filter(v => !!LEGEND_IMAGE_PATHS[v.affiliation]);
+        const icons = g.selectAll<SVGImageElement, { affiliation: string; count: number }>('image.comp-icon').data(iconsData, v => v.affiliation);
+        const computeIconSize = () => Math.max(12, Math.min(36, Math.floor(x1.bandwidth() * 0.8)));
+        const iconSize = computeIconSize();
+        const iconMargin = 4;
+
+        icons.enter().append('image')
+          .attr('class', 'comp-icon')
+          .attr('href', v => LEGEND_IMAGE_PATHS[v.affiliation])
+          .attr('width', iconSize)
+          .attr('height', iconSize)
+          .attr('x', v => (x1(v.affiliation) || 0) + (x1.bandwidth() - iconSize) / 2)
+          .attr('y', v => yLin(v.count) - iconSize - iconMargin)
+          .attr('opacity', 0.95)
+          .style('pointer-events', 'none');
+
+        icons.transition().duration(200)
+          .attr('href', v => LEGEND_IMAGE_PATHS[v.affiliation])
+          .attr('width', iconSize)
+          .attr('height', iconSize)
+          .attr('x', v => (x1(v.affiliation) || 0) + (x1.bandwidth() - iconSize) / 2)
+          .attr('y', v => yLin(v.count) - iconSize - iconMargin);
+
+        icons.exit().remove();
+      } catch { }
     });
 
     groupSel.exit().remove();

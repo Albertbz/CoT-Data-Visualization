@@ -38,6 +38,50 @@ export function initOverview() {
     document.documentElement.style.setProperty('--canvas-height', `${CANVAS_HEIGHT + 20}px`);
   } catch { }
 
+  // Cursor helper: show pointer when hovering and Cmd/Ctrl is held
+  let pointerOverSvg = false;
+  let lastModifierPressed = false;
+  function updateOverviewCursor() {
+    try {
+      // Show pointer when hovering and modifier held, even during brushing.
+      if (pointerOverSvg && lastModifierPressed) {
+        svg.style('cursor', 'pointer');
+        try {
+          const brushSel = svg.select<SVGGElement>('.x-brush');
+          if (!brushSel.empty()) {
+            brushSel.style('cursor', 'pointer');
+            try { brushSel.selectAll('.overlay').style('cursor', 'pointer'); } catch { }
+            try { brushSel.selectAll('.selection').style('cursor', 'pointer'); } catch { }
+          }
+        } catch { }
+      } else {
+        svg.style('cursor', null);
+        try {
+          const brushSel = svg.select<SVGGElement>('.x-brush');
+          if (!brushSel.empty()) {
+            brushSel.style('cursor', null);
+            try { brushSel.selectAll('.overlay').style('cursor', null); } catch { }
+            try { brushSel.selectAll('.selection').style('cursor', null); } catch { }
+          }
+        } catch { }
+      }
+    } catch { }
+  }
+  // Mouse enter/leave track whether pointer is over the SVG
+  try { svg.on('mouseenter.pointer', () => { pointerOverSvg = true; updateOverviewCursor(); }); } catch { }
+  try { svg.on('mouseleave.pointer', () => { pointerOverSvg = false; updateOverviewCursor(); }); } catch { }
+  // Keyboard listeners to detect modifier keys
+  try {
+    document.addEventListener('keydown', (e) => { try { if (e.key === 'Control' || e.key === 'Meta') { lastModifierPressed = true; updateOverviewCursor(); } } catch { } });
+    document.addEventListener('keyup', (e) => { try { if (e.key === 'Control' || e.key === 'Meta') { lastModifierPressed = false; updateOverviewCursor(); } } catch { } });
+  } catch { }
+
+  // Pointer listeners: trigger cursor update when pointer buttons change
+  try {
+    document.addEventListener('pointerdown', () => { try { updateOverviewCursor(); } catch { } });
+    document.addEventListener('pointerup', () => { try { updateOverviewCursor(); } catch { } });
+  } catch { }
+
   // Scales
   const xScale = d3.scaleLinear()
     .domain([d3.min(gameIndices) as number, d3.max(gameIndices) as number])
@@ -428,6 +472,14 @@ export function initOverview() {
     // Add hover handlers to show affiliation + social-class breakdown for the hovered date
     plot.selectAll<SVGPathElement, d3.Series<StackDatum, string>>('.area')
       .on('mousemove', function (event, series) {
+        // Only show area tooltips when pointer is inside the plot bounds
+        try {
+          const [bx, by] = d3.pointer(event, svg.node() as SVGElement);
+          if (bx < PLOT_LEFT || bx > PLOT_RIGHT || by < PLOT_TOP || by > PLOT_BOTTOM) {
+            try { tooltip.style('display', 'none'); } catch { }
+            return;
+          }
+        } catch { }
         const [sx] = d3.pointer(event, svg.node() as SVGElement);
         const x0 = xScale.invert(sx as number) as number;
         let i = bisectIndex(gameIndices, x0);
@@ -442,7 +494,7 @@ export function initOverview() {
         if (grouping === 'social') {
           const breakdown = affiliationCountsForSocial(dateStr, key);
           const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-          tooltip.style('display', 'block').html(`Date: ${dateLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+          showTooltipHtml(`Date: ${dateLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
         } else {
           const aff = key;
           const members = canonicalMembers[aff] || [aff];
@@ -460,15 +512,22 @@ export function initOverview() {
 
           const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
 
-          tooltip.style('display', 'block').html(`\n    Date: ${dateLabel}<br/>\n    <br/>\n    <strong>${aff}</strong><br/>\n    Total: ${totalForAff}<br/>\n    Commoners: ${classes.commoner}<br/>\n    Notables: ${classes.notable}<br/>\n    Nobles: ${classes.noble}<br/>\n    Rulers: ${classes.ruler}\n  `);
+          showTooltipHtml(`\n    Date: ${dateLabel}<br/>\n    <br/>\n    <strong>${aff}</strong><br/>\n    Total: ${totalForAff}<br/>\n    Commoners: ${classes.commoner}<br/>\n    Notables: ${classes.notable}<br/>\n    Nobles: ${classes.noble}<br/>\n    Rulers: ${classes.ruler}\n  `);
         }
         positionTooltip(event as unknown as MouseEvent, 12, -28);
       })
       .on('mouseout', () => tooltip.style('display', 'none'));
+
+    // Previously we raised the brush group here so it stayed above newly-drawn areas.
+    // Removing that automatic raise to avoid forcing the brush to the front on grouping changes.
   }
 
   // Hover overlay & tooltip
   const tooltip = d3.select('#overview-chart').append('div').style('position', 'absolute').style('background', 'rgba(0,0,0,0.7)').style('color', 'white').style('padding', '5px').style('border-radius', '5px').style('display', 'none');
+  const TOOLTIP_CLICK_NOTE = '<br/><br/><span style="font-size:11px;opacity:0.8">Ctrl/Cmd + left-click for detailed version.</span>';
+  function showTooltipHtml(html: string) {
+    try { tooltip.style('display', 'block').html(html + TOOLTIP_CLICK_NOTE); } catch { }
+  }
   function positionTooltip(event: MouseEvent, offsetX = 12, offsetY = -28) {
     const container = document.getElementById('overview-chart');
     if (!container) return;
@@ -681,37 +740,277 @@ export function initOverview() {
   // (comparison chart is created in comparison module; overview only provides the container)
 
   // Wire chart & grouping buttons will be connected after functions exist
-  // Create a small overlay rectangle for pointer interactions
-  svg.append('rect').attr('x', PLOT_LEFT).attr('y', PLOT_TOP).attr('width', PLOT_WIDTH).attr('height', PLOT_HEIGHT).attr('fill', 'transparent').attr('class', 'chart-overlay')
-    .on('mousemove', (event) => {
-      const [mx] = d3.pointer(event, svg.node() as SVGElement);
-      const x0 = xScale.invert(mx) as number;
-      let source: StackDatum[];
-      if (grouping === 'social') {
-        if (includeWanderers) source = dataForStackByClass as StackDatum[];
-        else source = dates.map(dateStr => {
-          const obj: { date: Date;[k: string]: number | Date } = { date: new Date(dateStr) };
-          canonicalOrderSocial.forEach(cls => { obj[cls] = socialCountFor(dateStr, cls); });
-          return obj as StackDatum;
-        });
-      } else {
-        source = dataForStack as StackDatum[];
+  // Create a transparent overlay rectangle (does not intercept pointer events by default so brushing works)
+  svg.append('rect')
+    .attr('x', PLOT_LEFT)
+    .attr('y', PLOT_TOP)
+    .attr('width', PLOT_WIDTH)
+    .attr('height', PLOT_HEIGHT)
+    .attr('fill', 'transparent')
+    .attr('class', 'chart-overlay')
+    .style('pointer-events', 'none');
+
+  // Move hover and click handling to the parent SVG so the brush (below) still receives pointer events
+  // Only show tooltip when no mouse buttons are pressed so dragging (brushing) still works.
+  svg.on('mousemove.overlay', (event) => {
+    try {
+      const me = event as MouseEvent;
+      // track last mouse buttons and modifier state so cursor updates correctly
+      try { lastMouseButtons = me.buttons || 0; } catch { lastMouseButtons = 0; }
+      try { lastModifierPressed = !!(me.ctrlKey || me.metaKey); } catch { lastModifierPressed = false; }
+      updateOverviewCursor();
+      if (me.buttons && me.buttons !== 0) return; // user is dragging — let brush handle
+      // Track last pointer position and only show tooltips when pointer is inside plot bounds (inside axes)
+      try {
+        const [bx, by] = d3.pointer(event, svg.node() as SVGElement);
+        if (bx < PLOT_LEFT || bx > PLOT_RIGHT || by < PLOT_TOP || by > PLOT_BOTTOM) {
+          try { tooltip.style('display', 'none'); } catch { }
+          return;
+        }
+      } catch { }
+      // If any element under the pointer (including elements below overlay/brush) is a stacked-area
+      // then let that handler show the detailed tooltip. Use elementsFromPoint so this works
+      // regardless of z-order or pointer-event layering.
+      try {
+        const els = document.elementsFromPoint(me.clientX, me.clientY) || [];
+        for (const el of els as Element[]) {
+          if (!el || typeof el.closest !== 'function') continue;
+          const areaEl = el.closest('.area') as Element | null;
+          if (areaEl) {
+            // Try to read the bound datum of the area path so we can show the same
+            // detailed tooltip the area handler would show. This covers cases where
+            // the area element is visually under the pointer but doesn't receive
+            // pointer events because another layer (brush) sits above it.
+            try {
+              const series = (d3.select(areaEl).datum() as unknown) as d3.Series<StackDatum, string> | undefined;
+              if (series && series.key) {
+                const [sx] = d3.pointer(event, svg.node() as SVGElement);
+                const x0 = xScale.invert(sx as number) as number;
+                let i = bisectIndex(gameIndices, x0);
+                if (i > 0 && i < gameIndices.length) {
+                  const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+                  i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
+                }
+                i = Math.max(0, Math.min(dates.length - 1, i));
+                const dateStr = dates[i];
+                const dateLabel = formatGameMonth(gameIndices[i]);
+                const key = series.key;
+                if (grouping === 'social') {
+                  const breakdown = affiliationCountsForSocial(dateStr, key);
+                  const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
+                  showTooltipHtml(`Date: ${dateLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+                } else {
+                  const aff = key;
+                  const members = canonicalMembers[aff] || [aff];
+                  const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
+                  members.forEach(m => {
+                    const entries = (dateGroups[dateStr].byAffiliation[m] || []);
+                    entries.forEach(e => {
+                      const sc = String(e['Social Class'] || '').trim().toLowerCase();
+                      if (sc === 'commoner') classes.commoner += 1;
+                      else if (sc === 'notable') classes.notable += 1;
+                      else if (sc === 'noble') classes.noble += 1;
+                      else if (sc === 'ruler') classes.ruler += 1;
+                    });
+                  });
+                  const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
+                  showTooltipHtml(`Date: ${dateLabel}<br/><br/><strong>${aff}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
+                }
+                positionTooltip(event as unknown as MouseEvent, 12, -28);
+                return; // done — area tooltip shown
+              }
+            } catch { /* ignore and continue */ }
+          }
+        }
+      } catch { }
+    } catch { }
+    const [mx] = d3.pointer(event, svg.node() as SVGElement);
+    const x0 = xScale.invert(mx) as number;
+    let source: StackDatum[];
+    if (grouping === 'social') {
+      if (includeWanderers) source = dataForStackByClass as StackDatum[];
+      else source = dates.map(dateStr => {
+        const obj: { date: Date;[k: string]: number | Date } = { date: new Date(dateStr) };
+        canonicalOrderSocial.forEach(cls => { obj[cls] = socialCountFor(dateStr, cls); });
+        return obj as StackDatum;
+      });
+    } else {
+      source = dataForStack as StackDatum[];
+    }
+    const keys = grouping === 'social' ? canonicalOrderSocial : canonicalOrderAffiliations;
+    let i = bisectIndex(gameIndices, x0);
+    if (i > 0 && i < gameIndices.length) {
+      const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+      i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
+    }
+    i = Math.max(0, Math.min((source as StackDatum[]).length - 1, i));
+    const d0 = (source as StackDatum[])[i]; const dateLabel = formatGameMonth(gameIndices[i]);
+    const visible = keys.filter(k => (d0[k] || 0) > 0);
+    const lines = visible.length ? visible.map(k => `${k}: ${d0[k] || 0}`).join('<br/>') : 'None';
+    const total = keys.reduce((s, k) => s + (d0[k] || 0), 0);
+    showTooltipHtml(`Date: ${dateLabel}<br/><br/>Total: ${total}<br/>${lines}`);
+    positionTooltip(event as unknown as MouseEvent, 12, -28);
+  });
+
+  // Hide tooltip when leaving the SVG area
+  svg.on('mouseleave.overlay', () => tooltip.style('display', 'none'));
+
+  // Only treat clicks as date-selection when Cmd/Ctrl is held; otherwise let brush handle drag interactions
+  svg.on('click.overlay', (event) => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    // compute nearest date index from click x position and dispatch event
+    const [mx] = d3.pointer(event, svg.node() as SVGElement);
+    const val = xScale.invert(mx) as number;
+    const bis = d3.bisector((d: number) => d).left;
+    let i = bis(gameIndices, val);
+    if (i > 0 && i < gameIndices.length) {
+      const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+      i = (Math.abs(g1 - val) <= Math.abs(g2 - val)) ? i - 1 : i;
+    } else if (i >= gameIndices.length) {
+      i = gameIndices.length - 1;
+    }
+    i = Math.max(0, Math.min(gameIndices.length - 1, i));
+    // Queue the comparison index — dispatch after the comparison chart is visible
+    // so the user sees the overview scroll into view before the detailed chart updates.
+    let pendingComparisonIndex: number | null = i;
+    let dispatchedComparison = false;
+
+    // Scroll the comparison chart into view so the user sees the detailed comparison.
+    try {
+      const comp = document.getElementById('comparison-chart');
+      if (comp) {
+        const offset = 12; // small gap from top
+
+        // Find nearest scrollable ancestor (or document.scrollingElement as fallback)
+        const findScrollable = (el: Element | null): Element | null => {
+          let cur: Element | null = el;
+          while (cur && cur !== document.documentElement) {
+            try {
+              const style = window.getComputedStyle(cur);
+              const overflowY = style.overflowY;
+              if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && cur.scrollHeight > cur.clientHeight) return cur;
+            } catch { }
+            cur = cur.parentElement;
+          }
+          return document.scrollingElement as Element | null;
+        };
+
+        const scroller = findScrollable(comp) || document.scrollingElement || document.documentElement;
+        const rect = comp.getBoundingClientRect();
+
+        if (scroller && scroller instanceof Element) {
+          const scrollerRect = scroller.getBoundingClientRect();
+          const start = scroller.scrollTop;
+          const target = start + (rect.top - scrollerRect.top) - offset;
+          const duration = 350;
+          const startTime = performance.now();
+          const animate = (now: number) => {
+            const t = Math.min(1, (now - startTime) / duration);
+            // easeInOutQuad
+            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            const current = Math.round(start + (target - start) * ease);
+            try {
+              const sAny = scroller as unknown as { scrollTo?: (opts: { top: number }) => void; scrollTop?: number };
+              if (typeof sAny.scrollTo === 'function') {
+                sAny.scrollTo!({ top: current });
+              } else {
+                (scroller as HTMLElement).scrollTop = current;
+              }
+            } catch {
+              try { (scroller as HTMLElement).scrollTop = current; } catch { }
+            }
+            if (t < 1) requestAnimationFrame(animate);
+          };
+          requestAnimationFrame(animate);
+        } else {
+          // Fallback to window scrolling
+          try { window.scrollTo({ top: window.scrollY + rect.top - offset, behavior: 'smooth' }); } catch { try { comp.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { comp.scrollIntoView(); } }
+        }
+
+        // Dispatch the comparison update only after scrolling finishes.
+        // Provide two implementations:
+        // - If we animated the scroller ourselves (requestAnimationFrame), dispatch
+        //   when that animation completes.
+        // - Otherwise, listen for 'scroll' events on the scroller (or window)
+        //   and detect scroll-end via a short debounce.
+        const slider = document.getElementById('compare-date-slider') as HTMLElement | null;
+        const dispatchComparisonIfNeeded = () => {
+          if (!dispatchedComparison && pendingComparisonIndex !== null) {
+            try { document.dispatchEvent(new CustomEvent('comparison:date', { detail: { index: pendingComparisonIndex } })); } catch { }
+            dispatchedComparison = true;
+          }
+        };
+        const focusSliderIfPresent = () => {
+          if (slider) {
+            try { (slider as HTMLInputElement).focus(); } catch { }
+          }
+        };
+
+        // If we used the custom animator (scroller instanceof Element), then
+        // patch the animator to call dispatch+focus when it finishes.
+        if (scroller && scroller instanceof Element) {
+          // Recreate the animation with a completion hook so we can dispatch when done.
+          try {
+            const scrollerRect = scroller.getBoundingClientRect();
+            const start = scroller.scrollTop;
+            const target = start + (rect.top - scrollerRect.top) - offset;
+            const duration = 350;
+            const startTime = performance.now();
+            const animate = (now: number) => {
+              const t = Math.min(1, (now - startTime) / duration);
+              const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+              const current = Math.round(start + (target - start) * ease);
+              try {
+                const sAny = scroller as unknown as { scrollTo?: (opts: { top: number }) => void; scrollTop?: number };
+                if (typeof sAny.scrollTo === 'function') {
+                  sAny.scrollTo!({ top: current });
+                } else {
+                  (scroller as HTMLElement).scrollTop = current;
+                }
+              } catch {
+                try { (scroller as HTMLElement).scrollTop = current; } catch { }
+              }
+              if (t < 1) requestAnimationFrame(animate);
+              else {
+                // animation finished
+                try { dispatchComparisonIfNeeded(); } catch { }
+                try { focusSliderIfPresent(); } catch { }
+              }
+            };
+            requestAnimationFrame(animate);
+          } catch {
+            // fallback: dispatch immediately if animation setup failed
+            try { dispatchComparisonIfNeeded(); } catch { }
+            try { focusSliderIfPresent(); } catch { }
+          }
+        } else {
+          // For window/document scrolling, listen for scroll end (debounced)
+          try {
+            const isWindow = !(scroller && scroller instanceof Element);
+            const targetScroller: EventTarget = isWindow ? window : (scroller as Element);
+            let scrollTimer: number | null = null;
+            const onScroll = () => {
+              if (scrollTimer) window.clearTimeout(scrollTimer);
+              scrollTimer = window.setTimeout(() => {
+                try { dispatchComparisonIfNeeded(); } catch { }
+                try { focusSliderIfPresent(); } catch { }
+                try {
+                  targetScroller.removeEventListener('scroll', onScroll as EventListener);
+                } catch { }
+                if (scrollTimer) { window.clearTimeout(scrollTimer); scrollTimer = null; }
+              }, 120);
+            };
+            try { targetScroller.addEventListener('scroll', onScroll as EventListener, { passive: true } as unknown as AddEventListenerOptions); } catch { try { targetScroller.addEventListener('scroll', onScroll as EventListener); } catch { } }
+            // safety fallback in case scroll events aren't fired
+            try { window.setTimeout(() => { try { dispatchComparisonIfNeeded(); } catch { } try { focusSliderIfPresent(); } catch { } }, 1500); } catch { }
+          } catch {
+            try { dispatchComparisonIfNeeded(); } catch { }
+            try { focusSliderIfPresent(); } catch { }
+          }
+        }
       }
-      const keys = grouping === 'social' ? canonicalOrderSocial : canonicalOrderAffiliations;
-      let i = bisectIndex(gameIndices, x0);
-      if (i > 0 && i < gameIndices.length) {
-        const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
-        i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
-      }
-      i = Math.max(0, Math.min((source as StackDatum[]).length - 1, i));
-      const d0 = (source as StackDatum[])[i]; const dateLabel = formatGameMonth(gameIndices[i]);
-      const visible = keys.filter(k => (d0[k] || 0) > 0);
-      const lines = visible.length ? visible.map(k => `${k}: ${d0[k] || 0}`).join('<br/>') : 'None';
-      const total = keys.reduce((s, k) => s + (d0[k] || 0), 0);
-      tooltip.style('display', 'block').html(`Date: ${dateLabel}<br/><br/>Total: ${total}<br/>${lines}`);
-      positionTooltip(event as unknown as MouseEvent, 12, -28);
-    })
-    .on('mouseout', () => tooltip.style('display', 'none'));
+    } catch { }
+  });
 
   // --- Horizontal brushing: allow selecting an x-range and zooming the x-axis ---
   svg.append('defs').append('clipPath').attr('id', 'clip-chart').append('rect').attr('x', PLOT_LEFT).attr('y', PLOT_TOP).attr('width', PLOT_WIDTH).attr('height', PLOT_HEIGHT);
@@ -720,8 +1019,24 @@ export function initOverview() {
 
   const brush = d3.brushX()
     .extent([[PLOT_LEFT, PLOT_TOP], [PLOT_RIGHT, PLOT_BOTTOM]])
-    .on('start', () => { try { plot.lower(); } catch { } try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'all'); } catch { } })
+    .on('start', (event: d3.D3BrushEvent<unknown>) => {
+      // Ignore programmatic brush moves (they have no sourceEvent).
+      try {
+        const src = (event as unknown as { sourceEvent?: Event | null }).sourceEvent;
+        if (!src) return;
+      } catch { }
+      try { console.log('brush:start'); } catch { }
+      try { plot.lower(); } catch { }
+      try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'all'); } catch { }
+    })
     .on('end', (event: d3.D3BrushEvent<unknown>) => {
+      // Ignore programmatic brush moves (they have no sourceEvent) to avoid
+      // processing the end handler twice when we call `brush.move(…, null)` below.
+      try {
+        const src = (event as unknown as { sourceEvent?: Event | null }).sourceEvent;
+        if (!src) return;
+      } catch { }
+      try { console.log('brush:end', (event as unknown as { selection: unknown }).selection); } catch { }
       const selection = event.selection;
       if (!selection) {
         try { plot.raise(); } catch { }
@@ -744,7 +1059,10 @@ export function initOverview() {
     });
 
   const brushG = svg.append('g').attr('class', 'x-brush').attr('clip-path', 'url(#clip-chart)').call(brush);
-  try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'none'); } catch { }
+  try { (brushG as unknown as d3.Selection<SVGGElement, unknown, null, undefined>).style('pointer-events', 'all'); } catch { }
+
+  // Keep the transparent overlay non-intercepting so the brush group can receive pointer events
+  try { svg.selectAll('.chart-overlay').style('pointer-events', 'none'); } catch { }
 
   svg.on('dblclick.reset-x', () => {
     xScale.domain([d3.min(gameIndices) as number, d3.max(gameIndices) as number]);
@@ -782,7 +1100,7 @@ export function initOverview() {
         if (grouping === 'social') {
           const breakdown = affiliationCountsForSocial(dateStr, key);
           const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-          tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+          showTooltipHtml(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
         } else {
           const members = canonicalMembers[key] || [key];
           const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
@@ -797,7 +1115,7 @@ export function initOverview() {
             });
           });
           const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
-          tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
+          showTooltipHtml(`Date: ${gameLabel}<br/><br/><strong>${key}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
         }
       })
       .on('mousemove', (event) => positionTooltip(event as unknown as MouseEvent, 10, -28))
@@ -862,58 +1180,114 @@ export function initOverview() {
     }
   }
 
-  // Nearest-point detection for line mode
+  // Nearest-pointer detection: used for line mode and stacked areas (bounds-checked)
   svg.on('mousemove.nearest', (event) => {
-    if (chartType !== 'lines') return;
+    if (chartType !== 'lines' && chartType !== 'stacked') return;
     const [mx, my] = d3.pointer(event, svg.node() as SVGElement);
+    // Only show nearest-point/tooltips when pointer is inside the plot bounds
+    try {
+      if (mx < PLOT_LEFT || mx > PLOT_RIGHT || my < PLOT_TOP || my > PLOT_BOTTOM) { tooltip.style('display', 'none'); return; }
+    } catch { }
     const hitRadius = 12;
     let best: { series?: string; val?: AffVal; dist2: number } = { dist2: Infinity };
 
-    let seriesToUse: { affiliation: string; values: AffVal[] }[] = [];
-    if (grouping === 'social') {
-      seriesToUse = includeWanderers ? socialSeries : canonicalOrderSocial.map(cls => ({ affiliation: cls, values: dates.map(dateStr => ({ date: new Date(dateStr), dateStr, count: socialCountFor(dateStr, cls) } as AffVal)) }));
-    } else {
-      seriesToUse = affiliationSeries;
-    }
-    seriesToUse.forEach(s => {
-      if (!activeAffiliations.has(s.affiliation)) return;
-      s.values.forEach(v => {
-        if (!v || (v.count || 0) <= 0) return;
-        const dx = xScale(gameMonthIndexFor(v.date)) - mx;
-        const dy = yScale(v.count) - my;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < best.dist2) best = { series: s.affiliation, val: v, dist2: d2 };
-      });
-    });
-
-    if (best.val && Math.sqrt(best.dist2) <= hitRadius) {
-      const aff = best.series || '';
-      const dateStr = best.val!.dateStr;
-      const gameLabel = dateStr ? formatGameMonth(gameMonthIndexFor(new Date(dateStr))) : '';
+    if (chartType === 'lines') {
+      let seriesToUse: { affiliation: string; values: AffVal[] }[] = [];
       if (grouping === 'social') {
-        const breakdown = affiliationCountsForSocial(dateStr, aff);
-        const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
-        tooltip.style('display', 'block').html(`Date: ${gameLabel}<br/><br/><strong>${aff}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+        seriesToUse = includeWanderers ? socialSeries : canonicalOrderSocial.map(cls => ({ affiliation: cls, values: dates.map(dateStr => ({ date: new Date(dateStr), dateStr, count: socialCountFor(dateStr, cls) } as AffVal)) }));
       } else {
-        const members = canonicalMembers[aff] || [aff];
-        const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
-        members.forEach(m => {
-          const entries = (dateGroups[dateStr].byAffiliation[m] || []);
-          entries.forEach(e => {
-            const sc = String(e['Social Class'] || '').trim().toLowerCase();
-            if (sc === 'commoner') classes.commoner += 1;
-            else if (sc === 'notable') classes.notable += 1;
-            else if (sc === 'noble') classes.noble += 1;
-            else if (sc === 'ruler') classes.ruler += 1;
-          });
-        });
-        const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
-        tooltip.style('display', 'block').html(`\n        Date: ${gameLabel}<br/>\n        <br/>\n        <strong>${aff}</strong><br/>\n        Total: ${totalForAff}<br/>\n        Commoners: ${classes.commoner}<br/>\n        Notables: ${classes.notable}<br/>\n        Nobles: ${classes.noble}<br/>\n        Rulers: ${classes.ruler}\n      `);
+        seriesToUse = affiliationSeries;
       }
-      positionTooltip(event as unknown as MouseEvent, 12, -28);
-    } else {
-      tooltip.style('display', 'none');
+      seriesToUse.forEach(s => {
+        if (!activeAffiliations.has(s.affiliation)) return;
+        s.values.forEach(v => {
+          if (!v || (v.count || 0) <= 0) return;
+          const dx = xScale(gameMonthIndexFor(v.date)) - mx;
+          const dy = yScale(v.count) - my;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < best.dist2) best = { series: s.affiliation, val: v, dist2: d2 };
+        });
+      });
+
+      if (best.val && Math.sqrt(best.dist2) <= hitRadius) {
+        const aff = best.series || '';
+        const dateStr = best.val!.dateStr;
+        const gameLabel = dateStr ? formatGameMonth(gameMonthIndexFor(new Date(dateStr))) : '';
+        if (grouping === 'social') {
+          const breakdown = affiliationCountsForSocial(dateStr, aff);
+          const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
+          showTooltipHtml(`Date: ${gameLabel}<br/><br/><strong>${aff}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+        } else {
+          const members = canonicalMembers[aff] || [aff];
+          const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
+          members.forEach(m => {
+            const entries = (dateGroups[dateStr].byAffiliation[m] || []);
+            entries.forEach(e => {
+              const sc = String(e['Social Class'] || '').trim().toLowerCase();
+              if (sc === 'commoner') classes.commoner += 1;
+              else if (sc === 'notable') classes.notable += 1;
+              else if (sc === 'noble') classes.noble += 1;
+              else if (sc === 'ruler') classes.ruler += 1;
+            });
+          });
+          const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
+          showTooltipHtml(`\n        Date: ${gameLabel}<br/>\n        <br/>\n        <strong>${aff}</strong><br/>\n        Total: ${totalForAff}<br/>\n        Commoners: ${classes.commoner}<br/>\n        Notables: ${classes.notable}<br/>\n        Nobles: ${classes.noble}<br/>\n        Rulers: ${classes.ruler}\n      `);
+        }
+        positionTooltip(event as unknown as MouseEvent, 12, -28);
+      }
+      return;
     }
+
+    // chartType === 'stacked'
+    try {
+      // Try to detect an `.area` element under the pointer and show the same tooltip
+      const els = document.elementsFromPoint((event as MouseEvent).clientX, (event as MouseEvent).clientY) || [];
+      for (const el of els as Element[]) {
+        if (!el || typeof el.closest !== 'function') continue;
+        const areaEl = el.closest('.area') as Element | null;
+        if (areaEl) {
+          try {
+            const series = (d3.select(areaEl).datum() as unknown) as d3.Series<StackDatum, string> | undefined;
+            if (series && series.key) {
+              const [sx] = d3.pointer(event, svg.node() as SVGElement);
+              const x0 = xScale.invert(sx as number) as number;
+              let i = bisectIndex(gameIndices, x0);
+              if (i > 0 && i < gameIndices.length) {
+                const g1 = gameIndices[i - 1]; const g2 = gameIndices[i];
+                i = (Math.abs(g1 - x0) <= Math.abs(g2 - x0)) ? i - 1 : i;
+              }
+              i = Math.max(0, Math.min(dates.length - 1, i));
+              const dateStr = dates[i];
+              const dateLabel = formatGameMonth(gameIndices[i]);
+              const key = series.key;
+              if (grouping === 'social') {
+                const breakdown = affiliationCountsForSocial(dateStr, key);
+                const affLines = breakdown.list.length ? breakdown.list.map(x => `${x.affiliation}: ${x.count}`).join('<br/>') : 'None';
+                showTooltipHtml(`Date: ${dateLabel}<br/><br/><strong>${key}</strong><br/>Total: ${breakdown.total}<br/>${affLines}`);
+              } else {
+                const aff = key;
+                const members = canonicalMembers[aff] || [aff];
+                const classes = { commoner: 0, notable: 0, noble: 0, ruler: 0 };
+                members.forEach(m => {
+                  const entries = (dateGroups[dateStr].byAffiliation[m] || []);
+                  entries.forEach(e => {
+                    const sc = String(e['Social Class'] || '').trim().toLowerCase();
+                    if (sc === 'commoner') classes.commoner += 1;
+                    else if (sc === 'notable') classes.notable += 1;
+                    else if (sc === 'noble') classes.noble += 1;
+                    else if (sc === 'ruler') classes.ruler += 1;
+                  });
+                });
+                const totalForAff = classes.commoner + classes.notable + classes.noble + classes.ruler;
+                showTooltipHtml(`Date: ${dateLabel}<br/><br/><strong>${aff}</strong><br/>Total: ${totalForAff}<br/>Commoners: ${classes.commoner}<br/>Notables: ${classes.notable}<br/>Nobles: ${classes.noble}<br/>Rulers: ${classes.ruler}`);
+              }
+              positionTooltip(event as unknown as MouseEvent, 12, -28);
+              return;
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { }
   });
 
   // Draw initial

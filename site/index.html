@@ -12,21 +12,29 @@
   <!-- Visualization will be rendered here -->
   <div id="app">
     <h1>CoT Interactive Visualization</h1>
-    <div style="margin-bottom:8px;color:#fff;">
-      <label style="margin-right:6px;">Chart type:</label>
-      <span id="chart-type-buttons">
-        <button id="chart-stacked" class="chart-btn">Stacked area</button>
-        <button id="chart-lines" class="chart-btn">Line</button>
-      </span>
+    <h2 style="margin:16px 0; color:#fff; text-align:center;">Overview</h2>
+    <div id="overview-chart" class="chart-card">
+      <div class="chart-top-controls">
+        <div class="chart-type-left">
+          <label class="chart-top-label">Chart type</label>
+          <span id="chart-type-buttons">
+            <button id="chart-stacked" class="chart-btn">Stacked area</button>
+            <button id="chart-lines" class="chart-btn">Line</button>
+          </span>
+        </div>
+        <div class="chart-group-right">
+          <label class="chart-top-label">Group by</label>
+          <span id="grouping-buttons">
+            <button id="group-aff" class="chart-btn">Affiliation</button>
+            <button id="group-class" class="chart-btn">Social Class</button>
+          </span>
+        </div>
+      </div>
     </div>
-    <div style="margin-bottom:8px;color:#fff;">
-      <label style="margin-right:6px;">Group by:</label>
-      <span id="grouping-buttons">
-        <button id="group-aff" class="chart-btn">Affiliation</button>
-        <button id="group-class" class="chart-btn">Social Class</button>
-      </span>
-    </div>
-    <div id="visualization"></div>
+
+    <h2 style="margin:16px 0; color:#fff; text-align:center;">Comparison</h2>
+
+    <div id="comparison-chart" class="chart-card"></div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

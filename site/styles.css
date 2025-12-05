@@ -14,9 +14,17 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background: linear-gradient(180deg, var(--bg), #021025);
   font-family: Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   color: var(--text)
+}
+
+/* Ensure the page background gradient covers the full document and
+   doesn't stop at the viewport height when content grows. Use a fixed
+   background so it appears consistent regardless of scroll position. */
+body {
+  min-height: 100vh;
+  background: linear-gradient(180deg, var(--bg), #021025);
+  background-attachment: fixed;
 }
 
 /* make svg responsive */
@@ -27,14 +35,20 @@ svg {
   display: block
 }
 
+/* Make comparison svg match the overview presentation height */
+#comparison-chart svg {
+  width: 100%;
+  height: var(--canvas-height, 400px);
+}
+
 #app {
   padding: 16px;
   max-width: 960px;
   margin: auto
 }
 
-/* Chart container styling */
-#visualization {
+/* Shared chart card styling for overview and comparison charts */
+.chart-card {
   border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 10px;
   /* add extra bottom padding so controls can sit below the chart */
@@ -42,11 +56,36 @@ svg {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.01);
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
+  position: relative;
 }
 
-/* make the visualization container a positioning context for controls */
-#visualization {
-  position: relative;
+/* Slight spacing for the comparison chart when shown below the overview */
+#comparison-chart {
+  margin-top: 20px;
+}
+
+/* Top controls inside the overview chart: left = Chart type, right = Group by */
+.chart-top-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.chart-top-controls .chart-type-left,
+.chart-top-controls .chart-group-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-top-label {
+  font-size: 14px;
+  margin: 0;
+  color: var(--text);
+  text-align: center;
 }
 
 /* Bottom-left ordering control */
@@ -66,8 +105,9 @@ svg {
 }
 
 /* Prevent text selection when clicking/dragging inside the chart area */
-#visualization,
-#visualization * {
+/* Prevent text selection when clicking/dragging inside the chart area */
+.chart-card,
+.chart-card * {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
@@ -101,4 +141,138 @@ svg {
 g.legend-item image.legend-icon {
   width: 36px;
   height: 36px;
+}
+
+/* Comparison affiliation buttons: image above label */
+.compare-aff-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+  /* fixed width so all affiliation buttons align uniformly */
+  width: 88px;
+  min-width: 88px;
+  max-width: 88px;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.compare-aff-btn:hover {
+  transform: translateY(-2px);
+}
+
+.compare-aff-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  display: block;
+}
+
+.compare-aff-label {
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Comparison slider styling: translucent outline and centered track/thumb */
+#compare-date-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 60%;
+  max-width: 720px;
+  height: 28px;
+  /* give room for thumb */
+  background: transparent;
+  border-radius: 8px;
+  outline: none;
+  border: none;
+  /* remove faint outer border */
+  padding: 6px;
+}
+
+#compare-date-slider::-webkit-slider-runnable-track {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  /* stronger, more visible track */
+  border-radius: 8px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+#compare-date-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  margin-top: -5px;
+  /* center the thumb on the track */
+  box-shadow: 0 4px 10px rgba(2, 6, 23, 0.45);
+}
+
+#compare-date-slider::-moz-range-track {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+#compare-date-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 10px rgba(2, 6, 23, 0.45);
+}
+
+#compare-date-label {
+  color: var(--muted);
+}
+
+/* Slider ticks (marks) under the range input */
+.slider-ticks {
+  margin: 0 auto;
+  position: relative;
+  top: -8px;
+  /* pull ticks up so they're flush under the slider track */
+  pointer-events: none;
+  /* allow dragging the slider without interference */
+}
+
+.slider-tick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 0;
+}
+
+.slider-tick .tick-line {
+  width: 1px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  /* faint so many ticks don't overwhelm */
+  border-radius: 1px;
+}
+
+.slider-tick .tick-label {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: auto;
+  /* allow label interactions if needed */
+}
+
+.slider-tick.active .tick-line {
+  background: var(--accent);
+  height: 10px;
 }

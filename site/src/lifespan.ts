@@ -308,6 +308,17 @@ export function initLifespan(containerId = 'lifespan-chart') {
     // reach closer to the SVG edge (leave a small padding of 16px).
     const xScale = d3.scaleLinear().domain([minIdx, maxIdx]).range([plotLeftOffset, CANVAS_WIDTH - 16]);
 
+    // compute average pixel spacing per month/index so we can extend
+    // each segment slightly beyond its exact tick. This gives visual
+    // breathing room for very short segments.
+    const avgStepPx = (maxIdx > minIdx)
+      ? (xScale(maxIdx) - xScale(minIdx)) / (maxIdx - minIdx)
+      : Math.max(6, (CANVAS_WIDTH - plotLeftOffset) * 0.02);
+    // Portion of the average tick spacing to extend each segment on both ends.
+    // Increasing this makes very-short segments visually larger.
+    const EXTEND_RATIO = 0.30; // 30% of avg spacing
+    const extendPx = avgStepPx * EXTEND_RATIO;
+
     // rows sizing
     const rowHeight = 26;
     const contentHeight = Math.max(PLOT_HEIGHT, ids.length * rowHeight + 8);
@@ -455,12 +466,19 @@ export function initLifespan(containerId = 'lifespan-chart') {
     // draw rows
     const rows = rowsG.selectAll<SVGGElement, ProcChar>('.lifespan-row').data(filtered, (d: ProcChar) => d.id);
     const rowsEnter = rows.enter().append('g').attr('class', 'lifespan-row');
-    rowsEnter.append('text').attr('class', 'name-label').attr('x', 8).attr('y', 0)
-      .attr('dy', '0.75em').style('fill', 'var(--text)').style('font-size', '12px');
+    // center the name vertically within the band using dominant-baseline
+    rowsEnter.append('text').attr('class', 'name-label').attr('x', 8)
+      .attr('y', yScale.bandwidth() / 2)
+      .attr('dominant-baseline', 'middle')
+      .style('fill', 'var(--text)').style('font-size', '12px');
 
     const rowsMerge = rowsEnter.merge(rows) as d3.Selection<SVGGElement, ProcChar, SVGGElement, ProcChar>;
     rowsMerge.attr('transform', (d: ProcChar) => `translate(0, ${yScale(d.id) || 0})`);
-    rowsMerge.select('.name-label').text((d: ProcChar) => d.finalName || d.id);
+    // ensure label remains vertically centered if bandwidth changes
+    rowsMerge.select('.name-label')
+      .attr('y', yScale.bandwidth() / 2)
+      .attr('dominant-baseline', 'middle')
+      .text((d: ProcChar) => d.finalName || d.id);
 
     // segments
     rowsMerge.each(function (d: ProcChar) {
@@ -509,8 +527,18 @@ export function initLifespan(containerId = 'lifespan-chart') {
         .on('mouseleave', () => tooltip.style('display', 'none'));
 
       segEnter.merge(segSel)
-        .attr('x', (s: Segment) => xScale(Math.min(s.start, s.end)))
-        .attr('width', (s: Segment) => Math.max(1, xScale(Math.max(s.end, s.start)) - xScale(Math.min(s.start, s.end))))
+        .attr('x', (s: Segment) => {
+          const a = Math.min(s.start, s.end);
+          const rawX = xScale(a) - extendPx;
+          return Math.max(plotLeftOffset, rawX);
+        })
+        .attr('width', (s: Segment) => {
+          const a = Math.min(s.start, s.end);
+          const b = Math.max(s.start, s.end);
+          const left = Math.max(plotLeftOffset, xScale(a) - extendPx);
+          const right = Math.min(CANVAS_WIDTH - 16, xScale(b) + extendPx);
+          return Math.max(1, right - left);
+        })
         .attr('height', (s: Segment) => {
           const cls = (s.socialClass || d.finalSocialClass || 'Commoner');
           const mult = barHeightMultiplierFor(cls);
@@ -532,6 +560,76 @@ export function initLifespan(containerId = 'lifespan-chart') {
         .style('filter', 'url(#lifespan-inner-shadow)');
 
       segSel.exit().remove();
+
+      // Add an invisible, slightly larger hit target so hovering is easier.
+      const HITBOX_PAD_X = 6; // px horizontally on each side
+      const HITBOX_PAD_Y = 2; // px vertically top/bottom
+      const segHitSel = g.selectAll<SVGRectElement, Segment>('.seg-hit').data(segs, (s: Segment) => `${d.id}::${s.start}::${s.end}`);
+      const segHitEnter = segHitSel.enter().append('rect').attr('class', 'seg-hit')
+        .style('fill', 'transparent')
+        .style('pointer-events', 'all')
+        .style('cursor', 'pointer');
+
+      segHitEnter.merge(segHitSel)
+        .attr('x', (s: Segment) => {
+          const a = Math.min(s.start, s.end);
+          const left = Math.max(plotLeftOffset, xScale(a) - extendPx);
+          return Math.max(plotLeftOffset, left - HITBOX_PAD_X);
+        })
+        .attr('width', (s: Segment) => {
+          const a = Math.min(s.start, s.end);
+          const b = Math.max(s.start, s.end);
+          const left = Math.max(plotLeftOffset, xScale(a) - extendPx);
+          const right = Math.min(CANVAS_WIDTH - 16, xScale(b) + extendPx);
+          const w = Math.max(1, right - left);
+          return Math.min(CANVAS_WIDTH - plotLeftOffset, w + HITBOX_PAD_X * 2);
+        })
+        .attr('y', (s: Segment) => {
+          const cls = (s.socialClass || d.finalSocialClass || 'Commoner');
+          const mult = barHeightMultiplierFor(cls);
+          const h = Math.max(1, Math.floor(yScale.bandwidth() * mult));
+          const y = Math.max(0, Math.round((yScale.bandwidth() - h) / 2));
+          return Math.max(0, y - HITBOX_PAD_Y);
+        })
+        .attr('height', (s: Segment) => {
+          const cls = (s.socialClass || d.finalSocialClass || 'Commoner');
+          const mult = barHeightMultiplierFor(cls);
+          const h = Math.max(1, Math.floor(yScale.bandwidth() * mult));
+          return Math.min(contentHeight, h + HITBOX_PAD_Y * 2);
+        })
+        .on('mousemove', function (event: MouseEvent, s: Segment) {
+          const originalAff = s.affiliation || d.finalAffiliation || 'Wanderer';
+          const startLabel = formatGameMonth(s.start);
+          const endLabel = formatGameMonth(s.end);
+          const vsUser = s.vsUsername || d.vsUsername || 'Unknown';
+          const discordUser = s.discordUsername || d.discordUsername || 'Unknown';
+          const socialClass = s.socialClass || d.finalSocialClass || 'Unknown';
+          const segName = s.name || d.finalName || d.id;
+          const finalNameNote = (s.name && d.finalName && s.name !== d.finalName) ? ` (final: ${d.finalName})` : '';
+          const html = `<strong>${segName}${finalNameNote}</strong><br/>` +
+            `Affiliation: ${originalAff}<br/>` +
+            `${startLabel} → ${endLabel}<br/>` +
+            `Social class: ${socialClass}<br/>` +
+            `VS: ${vsUser}<br/>` +
+            `Discord: ${discordUser}`;
+          try {
+            const rect = container.getBoundingClientRect();
+            const left = event.clientX - rect.left + 12;
+            const top = event.clientY - rect.top + 12;
+            tooltip.html(html)
+              .style('left', `${Math.max(8, left)}px`)
+              .style('top', `${Math.max(8, top)}px`)
+              .style('display', 'block');
+          } catch {
+            tooltip.html(html)
+              .style('left', (event.clientX + 12) + 'px')
+              .style('top', (event.clientY + 12) + 'px')
+              .style('display', 'block');
+          }
+        })
+        .on('mouseleave', () => tooltip.style('display', 'none'));
+
+      segHitSel.exit().remove();
     });
 
     rows.exit().remove();

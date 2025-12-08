@@ -755,15 +755,13 @@ export function processCharacterTimelines(data: Snapshot[]): ProcessedCharacter[
   // Decide whether a snapshot entry and a processed character represent the same character
   function isSameCharacter(s: { nameNorm: string; vsNorm: string; dcNorm: string; firstNorm: string; yom: number }, pm: { nameNorm: string; vsNorm: string; dcNorm: string; firstNorm: string; yom: number }, _pc?: ProcessedCharacter) {
     // First, check whether it is the same player by matching both VS and Discord usernames
+    // Also take into account if they were swapped around for some reason
     const vsMatch = s.vsNorm && pm.vsNorm && s.vsNorm === pm.vsNorm;
     const dcMatch = s.dcNorm && pm.dcNorm && s.dcNorm === pm.dcNorm;
+    const vsSwapped = s.vsNorm && pm.dcNorm && s.vsNorm === pm.dcNorm;
+    const dcSwapped = s.dcNorm && pm.vsNorm && s.dcNorm === pm.vsNorm;
     // If neither matches, definitely not the same character
-    if (!vsMatch && !dcMatch) return false;
-
-    // Now check name similarity
-    // First check whether same first name
-    const firstNameExactMatch = s.firstNorm && pm.firstNorm && s.firstNorm === pm.firstNorm;
-    if (!firstNameExactMatch) return false;
+    if (!vsMatch && !dcMatch && !vsSwapped && !dcSwapped) return false;
 
     // Special case: if first name is 'Brother', check full name exact match
     if (s.firstNorm === 'brother') {
@@ -771,7 +769,12 @@ export function processCharacterTimelines(data: Snapshot[]): ProcessedCharacter[
       return false;
     }
 
-    return true;
+    // Now check name similarity
+    // First check whether same first name with fuzzy matching
+    const firstNameExactMatch = s.firstNorm && pm.firstNorm && s.firstNorm === pm.firstNorm;
+    if (firstNameExactMatch) return true;
+
+    return false;
   }
 
   for (let idx = 0; idx < snapshots.length; idx++) {

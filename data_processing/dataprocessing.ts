@@ -505,6 +505,7 @@ export function mergeAgeAndHouseData(
       };
       mergedData.push(mergedEntry);
     } else {
+      // Could not find a matching house entry. If not supposed to 
       const mergedEntry = {
         "Discord Username": ageEntry['Discord Username'],
         "VS Username": ageEntry['VS Username'],
@@ -546,7 +547,93 @@ export function mergeAgeAndHouseData(
     mergedData.push(mergedEntry);
   }
 
-  return mergedData;
+  const socialClassRank: { [key: string]: number } = {
+      'Ruler': 4,
+      'Noble': 3,
+      'Notable': 2,
+      'Commoner': 1
+    };
+
+  // Make sure there are no duplicates based on Discord Username
+  const finalData: { [discordUsername: string]: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number } } = {};
+  for (const entry of mergedData) {
+    // If one exists, choose the one with the highest social class
+    // (Ruler > Noble > Notable > Commoner)
+    if (finalData[entry['Discord Username']]) {
+      const existingEntry = finalData[entry['Discord Username']];
+      if ((socialClassRank[entry['Social Class']] || 0) > (socialClassRank[existingEntry['Social Class']] || 0)) {
+        finalData[entry['Discord Username']] = entry;
+      }
+    } else {
+      finalData[entry['Discord Username']] = entry;
+    }
+  }
+
+  const mergedDataDCDuplicatesRemoved = Object.values(finalData);
+
+  // Make sure there are no duplicates based on VS username
+  const finalDataByVS: { [vsUsername: string]: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number } } = {};
+  for (const entry of mergedDataDCDuplicatesRemoved) {
+    if (entry['VS Username']) {
+      if (finalDataByVS[entry['VS Username']]) {
+        const existingEntry = finalDataByVS[entry['VS Username']];
+        if ((socialClassRank[entry['Social Class']] || 0) > (socialClassRank[existingEntry['Social Class']] || 0)) {
+          finalDataByVS[entry['VS Username']] = entry;
+        }
+      } else {
+        finalDataByVS[entry['VS Username']] = entry;
+      }
+    } else {
+      finalDataByVS[entry['Discord Username']] = entry; // keep unique key for those without VS username
+    }
+  }
+
+  const mergedDataArray = Object.values(finalDataByVS);
+
+  // Check for any duplicates based on character name, but if they are the same,
+  // check for similarity on discord username and vs username to check whether
+  // they are likely the same person.
+  const finalDataByName: { [charName: string]: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number } } = {};
+  for (const entry of mergedDataArray) {
+    if (finalDataByName[entry['Character Name']]) {
+      const existingEntry = finalDataByName[entry['Character Name']];
+      const distDC = levenshtein((entry['Discord Username'] || '').toLowerCase(), (existingEntry['Discord Username'] || '').toLowerCase());
+      const distVS = levenshtein((entry['VS Username'] || '').toLowerCase(), (existingEntry['VS Username'] || '').toLowerCase());
+      const maxLenDC = Math.max((entry['Discord Username'] || '').length, (existingEntry['Discord Username'] || '').length) || 1;
+      const maxLenVS = Math.max((entry['VS Username'] || '').length, (existingEntry['VS Username'] || '').length) || 1;
+      const similarityDC = 1 - distDC / maxLenDC;
+      const similarityVS = 1 - distVS / maxLenVS;
+      const SIMILARITY_THRESHOLD = 0.6;
+      if ((similarityDC >= SIMILARITY_THRESHOLD) || (similarityVS >= SIMILARITY_THRESHOLD)) {
+        // Consider them the same, choose the one with higher social class or the
+        // one that is not in the Wanderer affiliation
+        if ((socialClassRank[entry['Social Class']] || 0) > (socialClassRank[existingEntry['Social Class']] || 0)) {
+          finalDataByName[entry['Character Name']] = entry;
+        }
+        else if (entry['Affiliation'] !== 'Wanderer') {
+          finalDataByName[entry['Character Name']] = entry;
+        }
+      } else {
+        // Different people with same character name, keep both by appending a suffix
+        let suffix = 2;
+        let newName = `${entry['Character Name']} (${suffix})`;
+        while (finalDataByName[newName]) {
+          suffix++;
+          newName = `${entry['Character Name']} (${suffix})`;
+        }
+        finalDataByName[newName] = entry;
+      }
+    } else {
+      finalDataByName[entry['Character Name']] = entry;
+    }
+  }
+
+  mergedDataArray.length = 0;
+  for (const entry of Object.values(finalDataByName)) {
+    mergedDataArray.push(entry);
+  }
+
+  return mergedDataArray;
 }
 
 export interface Segment {

@@ -1,11 +1,14 @@
 import { applyCanvasHeight } from './canvassetup';
 import overviewModule from './overview';
 import comparisonModule from './comparison';
+import lifespanModule from './lifespan';
 
 // Apply CSS canvas height var then initialize modules
 applyCanvasHeight();
 const ov = overviewModule.initOverview();
 comparisonModule.initComparison();
+lifespanModule.initLifespan();
+
 
 // Listen for date selection events from the overview and forward to comparison slider
 document.addEventListener('comparison:date', (ev: Event) => {

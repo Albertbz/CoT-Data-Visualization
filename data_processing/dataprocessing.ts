@@ -422,9 +422,7 @@ export function mergeAgeAndHouseData(
 ): { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] {
   const mergedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number }[] = [];
 
-  // Helpers for fuzzy matching
-  type AgeEntry = { "Discord Username": string; "VS Username": string; "Character Name": string; Affiliation: string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number };
-  type HouseEntry = { "Social Class": string; House: string; Role: string; "Character Name": string; "VS Username"?: string; "Discord Username"?: string; Timezone?: string; Comments?: string; "Year of Maturity"?: number };
+  // Strict player-first matching helpers
   const normalize = (s: string | undefined) => (s || '').toString().normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const firstName = (s: string | undefined) => normalize(s).split(' ')[0] || '';
 
@@ -445,61 +443,49 @@ export function mergeAgeAndHouseData(
     return dp[m][n];
   }
 
-  // Score candidate match: higher is better
-  const scoreMatch = (age: AgeEntry, house: HouseEntry) => {
-    let score = 0;
-    const ageName = normalize(age['Character Name']);
-    const houseName = normalize(house['Character Name']);
-    const vsA = (age['VS Username'] || '').toString().toLowerCase();
-    const vsH = (house['VS Username'] || '').toString().toLowerCase();
-    const dcA = (age['Discord Username'] || '').toString().toLowerCase();
-    const dcH = (house['Discord Username'] || '').toString().toLowerCase();
-
-    if (vsA && vsH && vsA === vsH) score += 100;
-    if (dcA && dcH && dcA === dcH) score += 90;
-    if (ageName && houseName && ageName === houseName) score += 80;
-
-    const fnA = firstName(age['Character Name']);
-    const fnH = firstName(house['Character Name']);
-    if (fnA && fnH && fnA === fnH) score += 30;
-
-    // Year of Maturity present on age side increases confidence if house also has it
-    if (age['Year of Maturity'] && house['Year of Maturity'] && Number(age['Year of Maturity']) === Number(house['Year of Maturity'])) score += 50;
-
-    // Small Levenshtein distance increases score
-    if (ageName && houseName) {
-      const dist = levenshtein(ageName, houseName);
-      const maxLen = Math.max(ageName.length, houseName.length) || 1;
-      const rel = 1 - dist / maxLen; // similarity 0..1
-      score += Math.round(rel * 40); // up to 40
-    }
-
-    return score;
-  };
-
   // Track which house entries we've consumed
   const usedHouse = new Set<number>();
 
   for (const ageEntry of ageData) {
     const characterName = ageEntry['Character Name'];
 
-    // Best candidate search
-    let bestScore = -Infinity;
+    // Player-first matching: require both VS and Discord usernames to match
+    // (same player), then require the first name of the character to match.
     let bestIdx = -1;
     for (let i = 0; i < houseData.length; i++) {
       if (usedHouse.has(i)) continue;
       const h = houseData[i];
-      const s = scoreMatch(ageEntry as AgeEntry, h as HouseEntry);
-      if (s > bestScore) {
-        bestScore = s;
-        bestIdx = i;
+      const vsA = (ageEntry['VS Username'] || '').toString().toLowerCase();
+      const vsH = (h['VS Username'] || '').toString().toLowerCase();
+      const dcA = (ageEntry['Discord Username'] || '').toString().toLowerCase();
+      const dcH = (h['Discord Username'] || '').toString().toLowerCase();
+
+      // Only consider it the same player if both usernames match
+      if (vsA && vsH && dcA && dcH && vsA === vsH && dcA === dcH) {
+        const fnA = firstName(ageEntry['Character Name']);
+        const fnH = firstName(h['Character Name']);
+        // Accept if first-name matches
+        if (fnA && fnH && fnA === fnH) {
+          bestIdx = i;
+          break;
+        }
+
+        // Otherwise allow fuzzy matching on the full normalized name
+        const ageName = normalize(ageEntry['Character Name']);
+        const houseName = normalize(h['Character Name']);
+        const dist = levenshtein(ageName, houseName);
+        const maxLen = Math.max(ageName.length, houseName.length) || 1;
+        const similarity = 1 - dist / maxLen; // 0..1
+        const SIMILARITY_THRESHOLD = 0.6;
+        if (similarity >= SIMILARITY_THRESHOLD) {
+          bestIdx = i;
+          break;
+        }
+        // If similarity too low, continue searching
       }
     }
 
-    // Threshold for accepting a fuzzy match
-    const ACCEPT_THRESHOLD = 60;
-
-    if (bestIdx !== -1 && bestScore >= ACCEPT_THRESHOLD) {
+    if (bestIdx !== -1) {
       const houseEntry = houseData[bestIdx];
       usedHouse.add(bestIdx);
       const mergedEntry = {

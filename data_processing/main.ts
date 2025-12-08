@@ -8,8 +8,8 @@ async function main(): Promise<void> {
   const jwt: Auth.JWT = await getAuthenticatedClient('service-account-key.json', ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets.readonly']);
   // await processAgeSheets(jwt, '1NW8NfeSp1EjIPv42T8s21a3BBSVYufx1');
   // await processGreatHousesCitizensSheets(jwt, '1ym37u6_V0fipdCjhxMRgiD7GH2C-9gML');
-  // await mergeAllDataFiles();
-  // await combineAtllMergedDataFiles();
+  await mergeAllDataFiles();
+  await combineAllMergedDataFiles();
   // Get the merged data file in ./site/data/all_merged_data.json
   const allMergedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number; "Date": string }[] = loadDataFromFile('./site/data/all_merged_data.json');
 

@@ -2,6 +2,35 @@ import * as d3 from 'd3';
 
 // Import data from data folder. Data is in JSON format, and is an array of objects.
 import data from '../data/all_merged_data.json' assert { type: 'json' };
+import processedCharacters from '../data/processed_data.json' assert { type: 'json' };
+
+// Make type for character segments
+interface Segment {
+  start: number;
+  end: number;
+  socialClass: string;
+  affiliation: string;
+  name: string;
+  vsUsername?: string;
+  discordUsername?: string;
+}
+
+// Make type for processed character data
+interface ProcessedCharacter {
+  name: string;
+  id: string;
+  finalName: string;
+  finalAffiliation: string;
+  vsUsername?: string;
+  discordUsername?: string;
+  startYear: number;
+  endYear: number;
+  firstAppearanceDateStr?: string;
+  lastAppearanceDateStr?: string;
+  firstAppearanceIndex?: number;
+  lastAppearanceIndex?: number;
+  segments: Segment[];
+}
 
 // Make type for data entries
 export type DataEntry = {
@@ -207,5 +236,8 @@ export const dataForStackByClass = dates.map(dateStr => {
   });
   return obj as { date: Date } & Record<string, number>;
 });
+
+// Get the processed character data
+export const processedCharacterData: ProcessedCharacter[] = Array.isArray(processedCharacters) ? processedCharacters : [processedCharacters];
 
 console.log('data.ts: prepared', affiliations.length, 'affiliations,', dates.length, 'dates');

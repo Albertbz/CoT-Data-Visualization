@@ -13,6 +13,37 @@ export function initComparison() {
   compWrap.style.gap = '8px';
   compWrap.style.marginTop = '12px';
 
+  // Tooltip for bars
+  let compTooltip: d3.Selection<HTMLDivElement, unknown, null, undefined> | null = null;
+  try {
+    const container = document.getElementById('comparison-chart') as HTMLElement | null;
+    if (container) {
+      compTooltip = d3.select(container).append('div')
+        .style('position', 'absolute')
+        .style('background', 'rgba(0,0,0,0.75)')
+        .style('color', 'white')
+        .style('padding', '6px')
+        .style('border-radius', '6px')
+        .style('font-size', '12px')
+        .style('display', 'none')
+        .style('pointer-events', 'none');
+    }
+  } catch { }
+
+  function showCompTooltip(html: string) {
+    try { compTooltip?.style('display', 'block').html(html); } catch { }
+  }
+  function positionCompTooltip(event: MouseEvent, offsetX = 8, offsetY = -28) {
+    try {
+      const container = document.getElementById('comparison-chart');
+      if (!container || !compTooltip) return;
+      const rect = container.getBoundingClientRect();
+      const left = (event.clientX - rect.left) + offsetX;
+      const top = (event.clientY - rect.top) + offsetY;
+      compTooltip.style('left', left + 'px').style('top', top + 'px');
+    } catch { }
+  }
+
   const buttonRow = document.createElement('div');
   buttonRow.style.display = 'flex';
   buttonRow.style.flexWrap = 'wrap';
@@ -351,6 +382,16 @@ export function initComparison() {
         .attr('height', v => compH - yLin(v.count))
         .attr('fill', v => backdropOf(v.affiliation));
       rects.exit().remove();
+
+        // Attach tooltip handlers to bars
+        try {
+          g.selectAll<SVGRectElement, { affiliation: string; count: number }>('rect.comp-bar')
+            .on('mouseover', (event, v) => {
+              try { showCompTooltip(`${d.class} — <strong>${v.affiliation}</strong><br/>Count: <strong>${v.count}</strong>`); } catch { }
+            })
+            .on('mousemove', (event) => { try { positionCompTooltip(event as unknown as MouseEvent); } catch { } })
+            .on('mouseout', () => { try { compTooltip?.style('display', 'none'); } catch { } });
+        } catch { }
 
       // Affiliation icons on top of bars (if available)
       try {

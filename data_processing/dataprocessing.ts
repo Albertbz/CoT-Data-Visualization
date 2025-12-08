@@ -596,25 +596,6 @@ export function processCharacterTimelines(data: Snapshot[]): ProcessedCharacter[
   const normalize = (s: string | undefined) => (s || '').toString().normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const firstName = (s: string | undefined) => normalize(s).split(' ')[0] || '';
 
-  function levenshtein(a: string, b: string) {
-    const A = a.split('');
-    const B = b.split('');
-    const m = A.length;
-    const n = B.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        const cost = A[i - 1] === B[j - 1] ? 0 : 1;
-        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-      }
-    }
-    return dp[m][n];
-  }
-
-  
-
   // (removed unused countKeyMatches helper)
 
   const processed: ProcessedCharacter[] = [];
@@ -686,53 +667,24 @@ export function processCharacterTimelines(data: Snapshot[]): ProcessedCharacter[
 
   // Decide whether a snapshot entry and a processed character represent the same character
   function isSameCharacter(s: { nameNorm: string; vsNorm: string; dcNorm: string; firstNorm: string; yom: number }, pm: { nameNorm: string; vsNorm: string; dcNorm: string; firstNorm: string; yom: number }, _pc?: ProcessedCharacter) {
-    // New logic (player-first):
-    // 1) If same player (VS or Discord username equals) -> require first-name match.
-    //    - If first names differ -> different characters (return false).
-    //    - If first names equal -> same character (return true) (surname changes allowed).
-    // 2) Otherwise, fall back to conservative fuzzy matching by name and optional metadata.
+    // First, check whether it is the same player by matching both VS and Discord usernames
+    const vsMatch = s.vsNorm && pm.vsNorm && s.vsNorm === pm.vsNorm;
+    const dcMatch = s.dcNorm && pm.dcNorm && s.dcNorm === pm.dcNorm;
+    // If neither matches, definitely not the same character
+    if (!vsMatch && !dcMatch) return false;
 
-    const sameVs = s.vsNorm && pm.vsNorm && s.vsNorm === pm.vsNorm;
-    const sameDc = s.dcNorm && pm.dcNorm && s.dcNorm === pm.dcNorm;
-    const samePlayer = !!(sameVs || sameDc);
+    // Now check name similarity
+    // First check whether same first name
+    const firstNameExactMatch = s.firstNorm && pm.firstNorm && s.firstNorm === pm.firstNorm;
+    if (!firstNameExactMatch) return false;
 
-    // Year of maturity: if both present and different, treat as mismatch
-    const bothYomPresent = (s.yom && s.yom > 0) && (pm.yom && pm.yom > 0);
-    if (bothYomPresent && s.yom !== pm.yom) return false;
-
-    // Quick name pieces
-    const nameA = s.nameNorm || '';
-    const nameB = pm.nameNorm || '';
-    const firstA = s.firstNorm || '';
-    const firstB = pm.firstNorm || '';
-
-    if (samePlayer) {
-      // If the same player but first names differ, assume different characters
-      if (firstA && firstB && firstA !== firstB) return false;
-      // If first name matches (or missing), consider same character (allow surname changes)
-      return true;
-    }
-    else {
+    // Special case: if first name is 'Brother', check full name exact match
+    if (s.firstNorm === 'brother') {
+      if (s.nameNorm === pm.nameNorm) return true;
       return false;
     }
 
-    // Fallback path (different players): require fairly strong name similarity
-    if (!nameA && !nameB) return false;
-    if (nameA === nameB) return true;
-    const nameDist = levenshtein(nameA, nameB);
-    const nameSim = 1 - nameDist / Math.max(nameA.length, nameB.length, 1);
-    if (nameSim >= 0.85) return true; // high confidence by name alone
-
-    // Accept if first-name exact match and moderate similarity otherwise
-    if (firstA && firstB && firstA === firstB && nameSim >= 0.6) return true;
-
-    // Very conservative fallback: require multiple key matches
-    let keyMatches = 0;
-    if (firstA && firstB && firstA === firstB) keyMatches++;
-    if (s.vsNorm && pm.vsNorm && s.vsNorm === pm.vsNorm) keyMatches++;
-    if (s.dcNorm && pm.dcNorm && s.dcNorm === pm.dcNorm) keyMatches++;
-    if (bothYomPresent && s.yom === pm.yom) keyMatches++;
-    return keyMatches >= 3;
+    return true;
   }
 
   for (let idx = 0; idx < snapshots.length; idx++) {
@@ -918,6 +870,56 @@ export function processCharacterTimelines(data: Snapshot[]): ProcessedCharacter[
     }
   }
 
-  // Deduplication by username has been removed for now — return processed characters as-is.
+  // // Process the data and do some deduplication, where multiple characters
+  // // are played by the same player (same VS and Discord usernames) and have
+  // // the same name using fuzzy matching.
+  // for (let i = 0; i < processed.length; i++) {
+  //   const pc = processed[i];
+  //   for (let j = i + 1; j < processed.length; j++) {
+  //     const pc2 = processed[j];
+  //     if (pc.id === pc2.id) continue;
+  //     // Check if same character by first checking whether they share VS or Discord usernames
+  //     // and then whether their names are similar enough.
+  //     const shareVs = pc.vsUsername && pc2.vsUsername && pc.vsUsername === pc2.vsUsername;
+  //     const shareDc = pc.discordUsername && pc2.discordUsername && pc.discordUsername === pc2.discordUsername;
+  //     if (!shareVs && !shareDc) continue;
+
+  //     // Now check name similarity
+  //     // First check whether same first name (so only surname changed)
+  //     const firstA = firstName(pc.finalName);
+  //     const firstB = firstName(pc2.finalName);
+  //     if (firstA && firstB && firstA !== firstB) continue; // different first names
+
+  //     // Otherwise do fuzzy matching on full name
+  //     // const nameA = normalize(pc.finalName);
+  //     // const nameB = normalize(pc2.finalName);
+  //     // const nameDist = levenshtein(nameA, nameB);
+
+  //     // const nameSim = 1 - nameDist / Math.max(nameA.length, nameB.length, 1);
+  //     // if (nameSim < 0.8) continue; // not similar enough
+
+  //     // Merge pc2 into pc
+  //     pc.finalName = pc2.finalName || pc.finalName;
+  //     pc.finalAffiliation = pc2.finalAffiliation || pc.finalAffiliation;
+  //     pc.finalSocialClass = pc2.finalSocialClass || pc.finalSocialClass;
+  //     pc.vsUsername = pc2.vsUsername || pc.vsUsername;
+  //     pc.discordUsername = pc2.discordUsername || pc.discordUsername;
+  //     pc.startYear = Math.min(pc.startYear, pc2.startYear);
+  //     pc.endYear = Math.max(pc.endYear, pc2.endYear);
+  //     pc.firstAppearanceDateStr = pc.firstAppearanceDateStr || pc2.firstAppearanceDateStr;
+  //     pc.lastAppearanceDateStr = pc2.lastAppearanceDateStr || pc.lastAppearanceDateStr;
+  //     pc.firstAppearanceIndex = Math.min(pc.firstAppearanceIndex ?? Infinity, pc2.firstAppearanceIndex ?? Infinity);
+  //     pc.lastAppearanceIndex = Math.max(pc.lastAppearanceIndex ?? -Infinity, pc2.lastAppearanceIndex ?? -Infinity);
+
+  //     // Merge segments (simply concatenate and sort by start)
+  //     pc.segments = pc.segments.concat(pc2.segments);
+  //     pc.segments.sort((a, b) => a.start - b.start);
+
+  //     // Invalidate pc2 by deleting it
+  //     processed.splice(j, 1);
+  //     j--;
+  //   }
+  // }
+
   return processed;
 }

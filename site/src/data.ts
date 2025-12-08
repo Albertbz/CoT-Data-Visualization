@@ -17,10 +17,10 @@ interface Segment {
 
 // Make type for processed character data
 interface ProcessedCharacter {
-  name: string;
   id: string;
   finalName: string;
   finalAffiliation: string;
+  finalSocialClass: string;
   vsUsername?: string;
   discordUsername?: string;
   startYear: number;

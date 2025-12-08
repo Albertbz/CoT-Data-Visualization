@@ -1,4 +1,4 @@
-import { mergeAgeAndHouseData, processAgeSheets, processGreatHousesCitizensSheets } from './dataprocessing';
+import { mergeAgeAndHouseData, processAgeSheets, processGreatHousesCitizensSheets, processCharacterTimelines } from './dataprocessing';
 import { getAuthenticatedClient } from './auth';
 import { Auth } from 'googleapis';
 import { getPairedFilesByDate, loadDataFromFile, readFilesInDirectory, saveParsedDataToFile } from './filemanagement';
@@ -6,10 +6,17 @@ import { getPairedFilesByDate, loadDataFromFile, readFilesInDirectory, saveParse
 async function main(): Promise<void> {
 
   const jwt: Auth.JWT = await getAuthenticatedClient('service-account-key.json', ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets.readonly']);
-  await processAgeSheets(jwt, '1NW8NfeSp1EjIPv42T8s21a3BBSVYufx1');
-  await processGreatHousesCitizensSheets(jwt, '1ym37u6_V0fipdCjhxMRgiD7GH2C-9gML');
-  await mergeAllDataFiles();
-  await combineAllMergedDataFiles();
+  // await processAgeSheets(jwt, '1NW8NfeSp1EjIPv42T8s21a3BBSVYufx1');
+  // await processGreatHousesCitizensSheets(jwt, '1ym37u6_V0fipdCjhxMRgiD7GH2C-9gML');
+  // await mergeAllDataFiles();
+  // await combineAtllMergedDataFiles();
+  // Get the merged data file in ./site/data/all_merged_data.json
+  const allMergedData: { "Discord Username": string; "VS Username": string; "Character Name": string; "Social Class": string; "Affiliation": string; "PvE Deaths": number; "Year of Maturity": number; "Current Age": number; "Year 4": number; "Year 5": number; "Year 6": number; "Year 7": number; "Year 8": number; "Date": string }[] = loadDataFromFile('./site/data/all_merged_data.json');
+
+  // Process the data using processCharacterTimelines
+  const processedData = processCharacterTimelines(allMergedData);
+  // Save the processed data to ./site/data/processed_data.json
+  await saveParsedDataToFile(processedData, './site/data/processed_data.json');
 }
 
 main();
@@ -52,7 +59,7 @@ export async function combineAllMergedDataFiles(): Promise<void> {
   }
 
   // Save the combined data to a new JSON file.
-  const combinedFilePath = './merged_data/all_merged_data.json';
+  const combinedFilePath = './site/data/all_merged_data.json';
   saveParsedDataToFile(allMergedData, combinedFilePath);
   console.log(`Saved combined merged data to ${combinedFilePath}`);
 }

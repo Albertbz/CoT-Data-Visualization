@@ -59,7 +59,6 @@ svg {
   border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 10px;
   /* add extra bottom padding so controls can sit below the chart */
-  padding-bottom: 28px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.01);
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.35);
@@ -186,6 +185,147 @@ g.legend-item image.legend-icon {
 .compare-aff-label {
   font-size: 12px;
   text-align: center;
+}
+
+/* Social-class buttons: unified size and top-bar indicator */
+
+.compare-class-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* push label to the bottom while allowing the bar area to center */
+  justify-content: space-between;
+  width: 96px;
+  min-width: 96px;
+  height: 64px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  overflow: visible;
+}
+
+.compare-class-btn:hover {
+  transform: translateY(-2px);
+}
+
+.compare-class-barwrap {
+  display: flex;
+  /* allow this area to grow and center its contents both axes */
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px 0 8px;
+}
+
+.compare-class-topbar {
+  /* height set inline by JS to reflect multiplier; width set inline as percent */
+  background: var(--accent);
+  display: block;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  /* rounded all corners */
+}
+
+.compare-class-label {
+  text-align: center;
+  font-size: 12px;
+  padding: 6px 4px;
+  /* keep label area at the bottom and center text horizontally */
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 26px;
+}
+
+/* Lifespan chart specific class button styles (separate from comparison) */
+.lifespan-class-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 96px;
+  min-width: 96px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  overflow: visible;
+  /* allow the button to grow with the top bar height */
+  height: auto;
+  min-height: 40px;
+}
+
+.lifespan-class-btn:hover {
+  transform: translateY(-2px);
+}
+
+.lifespan-class-barwrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  /* let the bar area size itself based on the top-bar height set by JS */
+  padding: 0 0 4px 0;
+}
+
+.lifespan-class-topbar {
+  background: var(--accent);
+  display: block;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  /* ensure the topbar cannot exceed its container and stays centered */
+  max-height: 100%;
+  margin: 0 auto;
+}
+
+.lifespan-class-label {
+  text-align: center;
+  font-size: 12px;
+  /* padding: 6px 4px; */
+  /* push label to the bottom of the button consistently */
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 13px;
+}
+
+/* Comparison controls: render social-class buttons as plain text only
+   (used in the comparison/overview module). Hide the top-bar area so
+   buttons appear compact and only show their label. */
+#compare-controls .compare-class-btn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+#compare-controls .compare-class-barwrap,
+#compare-controls .compare-class-topbar {
+  display: none !important;
+}
+
+#compare-controls .compare-class-label {
+  padding: 6px 8px;
+  height: auto;
+  align-items: center;
 }
 
 /* Comparison slider styling: translucent outline and centered track/thumb */

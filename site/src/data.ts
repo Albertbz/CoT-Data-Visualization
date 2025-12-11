@@ -241,3 +241,5 @@ export const dataForStackByClass = dates.map(dateStr => {
 export const processedCharacterData: ProcessedCharacter[] = Array.isArray(processedCharacters) ? processedCharacters : [processedCharacters];
 
 console.log('data.ts: prepared', affiliations.length, 'affiliations,', dates.length, 'dates');
+// Log the total amount of characters
+console.log('data.ts: processed', processedCharacterData.length, 'characters.');
